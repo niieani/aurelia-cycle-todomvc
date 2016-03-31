@@ -30,7 +30,8 @@
   },
   "homepage": "https://github.com/aurelia/skeleton-navigation#readme",
   "dependencies": {
-    "@cycle/core": "^6.0.3",
+    "@cycle/base": "^1.2.2",
+    "@cycle/rxjs-adapter": "^1.0.0",
     "aurelia-bootstrapper-webpack": "^0.1.0",
     "aurelia-event-aggregator": "^1.0.0-beta.1.1.1",
     "aurelia-fetch-client": "^1.0.0-beta.1.1.0",
@@ -47,7 +48,9 @@
     "bootstrap": "^3.3.6",
     "font-awesome": "^4.5.0",
     "isomorphic-fetch": "^2.2.1",
-    "rx": "^4.1.0"
+    "rxjs": "^5.0.0-beta.4",
+    "todomvc-app-css": "^2.0.4",
+    "todomvc-common": "^1.0.2"
   },
   "devDependencies": {
     "aurelia-tools": "^0.1.18",

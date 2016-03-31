@@ -1,16 +1,16 @@
 import {View} from 'aurelia-templating'
-import {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subject} from 'rx' //'rxjs/Rx'
-import Cycle from '@cycle/core'
-// import Cycle from '@cycle/core/lib/index'
-// import rxjsAdapter from '@cycle/rxjs-adapter/lib/index'
-// import { DriverFunction } from '@cycle/base'
-import {LogManager, FrameworkConfiguration} from 'aurelia-framework';
+import {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subject} from 'rxjs/Rx'
+
+import Cycle from './core' // '@cycle/core' // /lib/index
+import rxjsAdapter from '@cycle/rxjs-adapter' // /lib/index
+import { DriverFunction } from '@cycle/base'
+import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom} from 'aurelia-framework';
 import {BindingSignaler} from 'aurelia-templating-resources'
 
+export {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subject} from 'rxjs/Rx'
 
-// import * as Rx from 'rx'
-
-export {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subject} from 'rx'
+// for ObservableSignalBindingBehavior
+import {Binding, sourceContext} from 'aurelia-binding'
 
 export function makeBindingDrivers(context) {
   const drivers = {}
@@ -50,6 +50,10 @@ export function makeOneWayBindingDriver(bindingObservable: Observable<any> & { _
 }
 
 export function configure(frameworkConfig: FrameworkConfiguration) {
+  const viewResources = frameworkConfig.aurelia.resources
+  const bindingBehaviorInstance = frameworkConfig.container.get(ObservableSignalBindingBehavior)
+  viewResources.registerBindingBehavior('observableSignal', bindingBehaviorInstance)
+  
   const originalBind = View.prototype.bind as Function
   
   View.prototype.bind = function bind(context: any, overrideContext?: Object, _systemUpdate?: boolean): void {
@@ -71,14 +75,6 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
     }
   }
 }
-
-// export function v() {
-//   return new ReplaySubject<any>(1)
-// }
-
-// export function a() {
-//   return new Subject<{ arguments: Array<any>, event: Event }>()
-// }
 
 
 export enum ChangeOrigin {
@@ -108,10 +104,75 @@ export function enhanceSubjectWithAureliaAction(subject: Subject<ValueAndOrigin<
 
 export function value<T>(initialValue?: T) {
   const subject = new ReplaySubject<any>(1) as ReplaySubject<any>
-  return enhanceSubjectWithAureliaTwoWay(subject)
+  return enhanceSubjectWithAureliaTwoWay(subject, initialValue)
 }
 
 export type ValueAndOrigin<T> = {value: T, origin: ChangeOrigin}
+
+// export class AureliaSubject<T> extends ReplaySubject<T> {
+// }
+
+export class AureliaSubjectWrapper {
+  _value;
+  
+  @computedFrom('_value')
+  get value() {
+    console.log('getting value')
+    return this._value
+  }
+  set value(value) {
+    console.log('setting value from view')    
+    // set from view
+    // this._value = value
+    this.observable.next(value)
+  }
+  
+  constructor(public observable: Subject<any>) {
+    observable.subscribe(value => this._value = value)
+  }
+}
+
+const observableGetter = function() {
+  return this._value
+} as (() => any) & {
+  getObserver: (observable: AureliaSubjectWrapper) => { 
+    subscribe?: (context, obj) => void,
+    unsubscribe?: (context, obj) => void
+  }
+}
+
+observableGetter.getObserver = function(observableWrapper) {
+  return {
+    subscribe: function(context, binding) {
+      console.log('subscribing to observable', context, binding, observableWrapper)
+      
+      this.subscription = observableWrapper.observable
+        // .filter(change => change.origin === ChangeOrigin.ViewModel)
+        .subscribe(next => {
+          // if (next.origin === ChangeOrigin.View) return
+          // let previousValue = observableWrapper._value
+          // observableWrapper._value = next // ensures Aurelia never calls the setter
+          console.log('updating target binding with value', next)
+          binding.call(context) //, currentValue, previousValue)
+          // binding.connect()
+          // binding.updateTarget(next.value)
+        })
+    },
+    unsubscribe: function(context, binding) {
+      this.subscription.unsubscribe()
+    }
+  }
+}
+
+Object.defineProperty(AureliaSubjectWrapper.prototype, 'value', {
+  get: observableGetter,
+  set: function(newValue) {
+    this._value = newValue
+    this.next({ value: newValue, origin: ChangeOrigin.View }) // perhaps an object?
+  },
+  enumerable: true,
+  configurable: true
+})
 
 function enhanceSubjectWithAureliaTwoWay<T>(subject: ReplaySubject<ValueAndOrigin<T>>, initialValue?: T) {
   let currentValue = initialValue
@@ -129,21 +190,35 @@ function enhanceSubjectWithAureliaTwoWay<T>(subject: ReplaySubject<ValueAndOrigi
     return {
       subscribe: function(context, binding) {
         console.log('subscribing to observable', context, binding, observable)
-        this.subscription = observable.subscribe(next => {
-          if (next.origin === ChangeOrigin.View) return
-          currentValue = next.value // ensures Aurelia never calls the setter
-          binding.updateTarget(next.value)
-        })
+        let relatedBindings:Set<Binding> = observable._relatedBindings = observable._relatedBindings || new Set<Binding>()
+        relatedBindings.add(binding)
+        
+        this.subscription = observable
+          .filter(change => change.origin === ChangeOrigin.ViewModel)
+          .subscribe(next => {
+            // if (next.origin === ChangeOrigin.View) return
+            let previousValue = currentValue
+            currentValue = next.value // ensures Aurelia never calls the setter
+            console.log('updating target binding with value', next.value)
+            binding.call(context, currentValue, previousValue)
+            // binding.connect()
+            // binding.updateTarget(next.value)
+          })
       },
       unsubscribe: function(context, binding) {
+        let relatedBindings:Set<Binding> = observable._relatedBindings
+        relatedBindings.delete(binding)
+        
         this.subscription.unsubscribe()
       }
     }
   }
-  
+
   Object.defineProperty(subject, 'value', {
     get: observableGetter,
-    set: function(newValue) { 
+    set: function(newValue) {
+      // let relatedBindings:Set<Binding> = this._relatedBindings
+      // relatedBindings.forEach(binding => binding.call()) 
       currentValue = newValue
       this.next({ value: newValue, origin: ChangeOrigin.View }) // perhaps an object?
     },
@@ -157,6 +232,37 @@ function enhanceSubjectWithAureliaTwoWay<T>(subject: ReplaySubject<ValueAndOrigi
   
   return subject
 }
+
+
+
+export class ObservableSignalBindingBehavior {
+  bind(binding: Binding & { signalingObservers: Array<Subscription>, call: (context)=>void }, source, ...observables: Array<Observable<any>>) {
+    if (!binding.updateTarget) {
+      throw new Error('Only property bindings and string interpolation bindings can be signaled.  Trigger, delegate and call bindings cannot be signaled.');
+    }
+    if (!observables || observables.length === 0)
+      throw new Error('Observable name is required.')
+
+    const signalingObservers = new Array<Subscription>()
+    for (let observable of observables) {
+      signalingObservers.push(
+        observable.subscribe(next => binding.call(sourceContext))
+      )
+    }
+    binding.signalingObservers = signalingObservers
+  }
+
+  unbind(binding: Binding & { signalingObservers: Array<Subscription> }, source) {
+    if (binding.signalingObservers) {
+      for (let subscription of binding.signalingObservers) {
+        subscription.unsubscribe()
+      }
+      binding.signalingObservers = undefined
+    }
+  }
+}
+
+
 
 // not a good idea:
 

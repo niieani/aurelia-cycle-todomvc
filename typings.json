@@ -1,7 +1,12 @@
 {
   "name": "aurelia-skeleton-navigation-typescript-webpack",
   "version": false,
-  "dependencies": {},
+  "dependencies": {
+    "@cycle/base": "npm:@cycle/base",
+    "@cycle/core": "npm:@cycle/core/lib/index.d.ts",
+    "@cycle/rxjs-adapter": "npm:@cycle/rxjs-adapter",
+    "rxjs": "npm:rxjs"
+  },
   "ambientDependencies": {
     "aurelia-binding": "npm:aurelia-binding/dist/commonjs/aurelia-binding.d.ts",
     "aurelia-bootstrapper-webpack": "npm:aurelia-bootstrapper-webpack/dist/commonjs/aurelia-bootstrapper-webpack.d.ts",
@@ -13,9 +18,11 @@
     "aurelia-history-browser": "npm:aurelia-history-browser/dist/commonjs/aurelia-history-browser.d.ts",
     "aurelia-loader": "npm:aurelia-loader/dist/commonjs/aurelia-loader.d.ts",
     "aurelia-loader-webpack": "npm:aurelia-loader-webpack/dist/commonjs/aurelia-loader-webpack.d.ts",
+    "aurelia-logging": "npm:aurelia-logging/dist/commonjs/aurelia-logging.d.ts",
     "aurelia-logging-console": "npm:aurelia-logging-console/dist/commonjs/aurelia-logging-console.d.ts",
     "aurelia-metadata": "npm:aurelia-metadata/dist/commonjs/aurelia-metadata.d.ts",
     "aurelia-pal-browser": "npm:aurelia-pal-browser/dist/commonjs/aurelia-pal-browser.d.ts",
+    "aurelia-pal": "npm:aurelia-pal/dist/commonjs/aurelia-pal.d.ts",
     "aurelia-path": "npm:aurelia-path/dist/commonjs/aurelia-path.d.ts",
     "aurelia-polyfills": "npm:aurelia-polyfills/dist/commonjs/aurelia-polyfills.d.ts",
     "aurelia-route-recognizer": "npm:aurelia-route-recognizer/dist/commonjs/aurelia-route-recognizer.d.ts",
@@ -25,7 +32,6 @@
     "aurelia-templating-binding": "npm:aurelia-templating-binding/dist/commonjs/aurelia-templating-binding.d.ts",
     "aurelia-templating-resources": "npm:aurelia-templating-resources/dist/commonjs/aurelia-templating-resources.d.ts",
     "aurelia-templating-router": "npm:aurelia-templating-router/dist/commonjs/aurelia-templating-router.d.ts",
-    "core-js": "registry:dt/core-js#0.0.0+20160317120654",
-    "rx": "npm:rx/ts/rx.all.es6.d.ts"
+    "core-js": "registry:dt/core-js#0.0.0+20160317120654"
   }
 }
