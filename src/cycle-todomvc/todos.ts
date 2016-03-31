@@ -1,13 +1,11 @@
 import 'todomvc-common/base.css'
 import 'todomvc-app-css/index.css'
 
-import {Observable, Subject, ReplaySubject} from 'rxjs/Rx'
-import {action as a, value as v} from '../cycle/plugin'
+import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
+import {action as a, value as v, collection} from '../cycle/plugin'
 import {computedFrom} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
 
-// 1. use old cycle.js, this one has problems
-// 2. try the other guy's method: define Rx differently and two-way subscribing to obs.value 
 
 export class Todos {
   addNewTodoActions$ = a()
@@ -16,7 +14,8 @@ export class Todos {
   
   completionChanges$ = v() //new Subject() //a() // this could be an aggregate?
   
-  todos$ = v()
+  // todos$ = v()
+  todos$ = collection<TodoItem>()
   filter$ = a()
   currentFilter$ = v()
   
@@ -24,7 +23,7 @@ export class Todos {
     this.completionChanges$.subscribe(completionChange => console.log('completion change', completionChange))
   }
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitleChanges$, filter$ }) { //: this
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitleChanges$, filter$, todos$ }: this) { //: this
     console.log('we are cycling TODOS!', arguments, this)
     
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
@@ -34,7 +33,7 @@ export class Todos {
     
     const newTodo$ = newTodoProspective$
       .filter(title => title != '')
-      .map(title => ({ action: 'added', todo: new TodoItem(title, false, destroyTodo$) }))
+      .map(title => ({ action: 'added', item: new TodoItem(title, false, destroyTodo$) }))
     
     // reset title after adding
     const newTodoTitle$ = newTodoTitleChanges$
@@ -42,26 +41,26 @@ export class Todos {
       .startWith('')
 
     const removedTodo$ = destroyTodo$
-      .map(args => ({ action: 'removed', todo: args[0] }))
+      .map(args => ({ action: 'removed', item: args[0] }))
     
     const todoChanges$ = Observable
       .merge<any, any>(newTodo$, removedTodo$)
       .startWith(
-        { action: 'added', todo: new TodoItem('incomplete', false, destroyTodo$) },
-        { action: 'added', todo: new TodoItem('completed', true, destroyTodo$) }
+        { action: 'added', item: new TodoItem('incomplete', false, destroyTodo$) },
+        { action: 'added', item: new TodoItem('completed', true, destroyTodo$) }
       )// as Observable<{ action:string, todo:ITodo }>
     
-    const todos$ = todoChanges$
-      .scan<Array<TodoItem>>((array, change) => {
-        if (change.action == 'added') {
-          array.push(change.todo)
-        }
-        else {
-          array.splice(array.indexOf(change.todo), 1)
-        }
-        return array
-      }, [])
-      .share()
+    // const todos$ = todoChanges$
+    //   .scan<Array<TodoItem>>((array, change) => {
+    //     if (change.action == 'added') {
+    //       array.push(change.todo)
+    //     }
+    //     else {
+    //       array.splice(array.indexOf(change.todo), 1)
+    //     }
+    //     return array
+    //   }, [])
+    //   .share()
     
     const currentFilter$ = filter$
       .map(args => args[0])
@@ -71,16 +70,23 @@ export class Todos {
     // I need to be notified on any change of any completed observable
     // and need to know the parent object that complete belongs to
     // so my observable needs to be triggered when any of todo.completed changes
+    const completionChanges$ = todos$
+      .filter(change => change.property === 'isCompleted$')
+      .do(completionChange => console.log('completion change', completionChange))
+
     // merge(todo.completed, todo.completed, ...)
     // and it's value needs to be the todo object
-    const completionChanges$ = todos$.map(todosArray => {
-      const observables = todosArray.map(todo => todo.isCompleted$.map(completed => ({ todo, isCompleted: completed })))
-      return Observable.merge(...observables)
-    }).mergeAll().share()//.do(completionChange => console.log('completion change', completionChange))
+    // todos$.flatMap()
+    // const completionChanges$ = todos$.map(todosArray => {
+    //   const observables = todosArray.map(todo => todo.isCompleted$.map(completed => ({ todo, isCompleted: completed })))
+    //   return Observable.merge(...observables)
+    // }).mergeAll().share()//.do(completionChange => console.log('completion change', completionChange))
+    
+    // const betterCompletionChanges$ = todoChanges$.
     
     return {
-      todos$,
-      newTodoTitle$: newTodoTitleChanges$,
+      todos$: todoChanges$,
+      newTodoTitle$,
       currentFilter$,
       completionChanges$
     }

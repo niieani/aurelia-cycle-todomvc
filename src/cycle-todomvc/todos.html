@@ -11,28 +11,16 @@
       <input class="toggle-all" type="checkbox">
       <label for="toggle-all">Mark all as complete</label>
       <ul class="todo-list">
-        <!--<li as-element="todo-item" repeat.for="todo of todos & cycle"
-            title.bind="todo.title" completed.bind="todo.completed">
-        </li>-->
-        <compose repeat.for="todo of todos$.value | filterTodo: currentFilter$.value" 
-                 view-model.bind="todo"></compose>
-                 
-        <!--<todo-item repeat.for="todo of todos.value | filterTodo: currentFilter.value & observableSignal: completionChanges$"
-            title.bind="todo.title" completed.bind="todo.completed"
-            destroy.bind="@rx(destroyTodo, todo)">
-        </todo-item>-->
-             <!--| filterTodo: currentFilter.value-->
-            <!--wtf.bind="wtf">-->
-            <!--destroyAction.bind="@rx('destroyTodo', todo)">-->
-        <!--<li repeat.for="todo of todos & cycle">
-          ${todo.title}
-        </li>-->
+        <li as-element="compose"
+            repeat.for="todo of todos$.value | filterTodo: currentFilter$.value | trigger: completionChanges$.value"
+            view-model.bind="todo">
+        </li>
       </ul>
     </section>
     <!-- This footer should hidden by default and shown when there are todos -->
     <footer class="footer">
       <!-- This should be `0 items left` by default -->
-      <span class="todo-count"><strong>${todos$.value | countIncomplete: completionChanges$.value}</strong> item left</span>
+      <span class="todo-count"><strong>${todos$.value | countIncomplete | trigger: completionChanges$.value}</strong> item left</span>
        <!--& observableSignal: completionChanges$-->
        <!---->
       <ul class="filters">
