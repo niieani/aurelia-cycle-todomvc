@@ -1,12 +1,13 @@
 import {Observable} from 'rxjs/Rx'
 
-import {bindable} from 'aurelia-framework'
+import {bindable, useView} from 'aurelia-framework'
 
 import {action as a, value as v} from '../cycle/plugin'
 
 const ENTER_KEY = 13
 const ESC_KEY = 27
 
+@useView('./todo-item.html')
 export class TodoItem {
   // cycleDrivers = { TodoItemView: makeAureliaDriver(this) }
   
@@ -30,8 +31,8 @@ export class TodoItem {
     this.isCompleted$ = v(completed)
   }
   
-  title$;
-  isCompleted$; // = v()
+  title$ = v(); //AureliaSubjectWrapper;
+  isCompleted$ = v(); // AureliaSubjectWrapper; // = v()
   isEditing$ = v()
   
   startEdit$ = a()

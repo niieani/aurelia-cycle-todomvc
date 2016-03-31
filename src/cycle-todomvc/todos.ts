@@ -14,13 +14,17 @@ export class Todos {
   destroyTodo$ = a()
   newTodoTitleChanges$ = v()
   
-  completionChanges$ = a() // this could be an aggregate?
+  completionChanges$ = v() //new Subject() //a() // this could be an aggregate?
   
   todos$ = v()
   filter$ = a()
   currentFilter$ = v()
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitleChanges$, filter$ }: this) {
+  attached() {
+    this.completionChanges$.subscribe(completionChange => console.log('completion change', completionChange))
+  }
+  
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitleChanges$, filter$ }) { //: this
     console.log('we are cycling TODOS!', arguments, this)
     
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
@@ -72,7 +76,7 @@ export class Todos {
     const completionChanges$ = todos$.map(todosArray => {
       const observables = todosArray.map(todo => todo.isCompleted$.map(completed => ({ todo, isCompleted: completed })))
       return Observable.merge(...observables)
-    }).mergeAll().share().do(completionChange => console.log('completion change', completionChange))
+    }).mergeAll().share()//.do(completionChange => console.log('completion change', completionChange))
     
     return {
       todos$,
@@ -90,13 +94,21 @@ export class FilterTodoValueConverter {
     switch (currentFilter) {
       case 'active':
         // return todos.filter(todo => !todo.completed.last)
-        return todos.filter(todo => !todo.completed.value)
+        return todos.filter(todo => !todo.isCompleted$.value)
       case 'completed':
-        return todos.filter(todo => todo.completed.value)
+        return todos.filter(todo => todo.isCompleted$.value)
         // return todos.filter(todo => todo.completed.last)
       default:
         return todos
     }
+  }
+}
+
+export class CountIncompleteObservableValueConverter {
+  toView(todos: Observable<Array<any>> & { value: Array<any> }) {
+    const count = todos && todos.value ? todos.value.filter(todo => !todo.isCompleted$.value).length : 0
+    console.log('counting incomplete', todos)
+    return count
   }
 }
 

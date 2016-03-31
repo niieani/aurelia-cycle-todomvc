@@ -2,10 +2,7 @@
 import {bootstrap} from 'aurelia-bootstrapper-webpack';
 // import './cycle/index'
 
-import 'bootstrap/dist/css/bootstrap.css';
-import 'font-awesome/css/font-awesome.css';
-import '../styles/styles.css';
-
+// height: 40px;
 bootstrap((aurelia: Aurelia): void => {
   aurelia.use
     .standardConfiguration()

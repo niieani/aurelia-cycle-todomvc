@@ -1,6 +1,10 @@
 import {Aurelia} from 'aurelia-framework';
 import {Router, RouterConfiguration} from 'aurelia-router';
 
+import 'bootstrap/dist/css/bootstrap.css';
+import 'font-awesome/css/font-awesome.css';
+import '../styles/styles.css';
+
 export class App {
   router: Router;
 

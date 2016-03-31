@@ -4,33 +4,55 @@ import {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subj
 import Cycle from './core' // '@cycle/core' // /lib/index
 import rxjsAdapter from '@cycle/rxjs-adapter' // /lib/index
 import { DriverFunction } from '@cycle/base'
-import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom} from 'aurelia-framework';
+import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom, autoinject} from 'aurelia-framework';
 import {BindingSignaler} from 'aurelia-templating-resources'
+
+import {ViewEngineHooks} from 'aurelia-templating'
 
 export {Observable, Observer, Subscription, ReplaySubject, BehaviorSubject, Subject} from 'rxjs/Rx'
 
 // for ObservableSignalBindingBehavior
-import {Binding, sourceContext} from 'aurelia-binding'
+import {Binding, sourceContext, ObserverLocator} from 'aurelia-binding'
+
+export enum BindingType {
+  Value,
+  Action
+}
 
 export function makeBindingDrivers(context) {
   const drivers = {}
+  const observables = {}
   Object.keys(context)
     .filter(propName => typeof context[propName].subscribe === 'function')
+    // .filter(propName => context[propName] instanceof Observable || context[propName] instanceof AureliaSubjectWrapper)
     .forEach(propName => {
       const observable = context[propName]
-      drivers[propName] = typeof context[propName].next === 'function' ? 
+
+      if (observable._bindingType === BindingType.Action)
+        enhanceSubjectWithAureliaAction(observable)
+      else {
+        enhanceSubjectWithAureliaValue(observable)
+        observables[propName] = observable
+      }
+
+      drivers[propName] = typeof context[propName].next === 'function' && observable._bindingType !== BindingType.Action ? 
+      // drivers[propName] = context[propName] instanceof AureliaSubjectWrapper ? 
                 makeTwoWayBindingDriver(observable) : makeOneWayBindingDriver(observable)
     }
     // TODO: add setter drivers on non-observable properties
   )
-  return drivers
+  return { drivers, observables }
 }
 
-export function makeTwoWayBindingDriver(bindingObservable: Subject<any> & { _value: any }) {
+export function makeTwoWayBindingDriver(bindingObservable: ReplaySubject<any> & { _value: any }) {
   const driverCreator: DriverFunction = function aureliaDriver(value$: Observable<string>) {
     value$.subscribe(newValue => {
+      // if (bindingObservable._value !== newValue)
+      //   // update the value seen in the view
+        // bindingObservable._value = newValue
       bindingObservable.next({ value: newValue, origin: ChangeOrigin.ViewModel })
     })
+
     return bindingObservable
       .filter(change => change.origin === ChangeOrigin.View)
       .map(change => change.value)
@@ -54,12 +76,55 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
   const bindingBehaviorInstance = frameworkConfig.container.get(ObservableSignalBindingBehavior)
   viewResources.registerBindingBehavior('observableSignal', bindingBehaviorInstance)
   
+  const hooks = {
+    beforeBind: function (view: View & {bindingContext}) {
+      const context = view.bindingContext
+      if (!context || typeof context.cycle !== 'function') return
+      // console.log('before bind', view)
+      
+      const sources = context.cycleDrivers || {}
+      const { drivers, observables } = makeBindingDrivers(context)
+      
+      // bind all observables
+      Object.getOwnPropertyNames(observables)
+        .forEach(propName => observables[propName]._bind())
+      
+      context._cycleContextObservables = observables
+      
+      Object.assign(sources, drivers)
+      
+      const disposeFunction = Cycle.run(context.cycle.bind(context), sources)
+      
+      context._cycleDispose = disposeFunction
+      
+      // const originalUnbind = context.constructor.prototype.unbind as Function || (()=>{})
+      // context.unbind = function() {
+      //   disposeFunction()
+      //   originalUnbind.apply(context, arguments)
+      // }
+    },
+    beforeUnbind: function (view: View & {bindingContext}) {
+      const context = view.bindingContext
+      if (!context || typeof context.cycle !== 'function') return
+      
+      const observables = context._cycleContextObservables
+      Object.getOwnPropertyNames(observables)
+        .forEach(propName => observables[propName]._unbind())
+      
+      context._cycleDispose()
+      
+      // console.log('before unbind', view)      
+    },
+  } as ViewEngineHooks
+  
+  viewResources.registerViewEngineHooks(hooks)
+  /*
   const originalBind = View.prototype.bind as Function
   
   View.prototype.bind = function bind(context: any, overrideContext?: Object, _systemUpdate?: boolean): void {
     originalBind.apply(this, arguments)
     
-    if (!context || typeof context.cycle != 'function') {
+    if (!context || typeof context.cycle !== 'function') {
       return
     }
     
@@ -74,6 +139,7 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
       originalUnbind.apply(context, arguments)
     }
   }
+  */
 }
 
 
@@ -83,12 +149,16 @@ export enum ChangeOrigin {
 }
 
 export function action() {
-  return enhanceSubjectWithAureliaAction(new Subject<ValueAndOrigin<Array<any>>>())
+  const subject = new Subject<Array<any>>()
+  // enhanceSubjectWithAureliaAction(subject)
+  subject['_bindingType'] = BindingType.Action
+  return subject
 }
 
-export function enhanceSubjectWithAureliaAction(subject: Subject<ValueAndOrigin<Array<any>>>) {
+export function enhanceSubjectWithAureliaAction(subject) {//: Subject<Array<any>>) {
   const invokeMethod = function() {
     subject.next({ origin: ChangeOrigin.View, value: Array.from(arguments) })
+    // subject.next(Array.from(arguments))
   }
   
   Object.defineProperty(subject, 'action', {
@@ -99,19 +169,28 @@ export function enhanceSubjectWithAureliaAction(subject: Subject<ValueAndOrigin<
     configurable: true
   })
   
-  return subject
+  subject['_onValueUpdateCallables'] = new Set()
+  
+  // return subject
 }
 
 export function value<T>(initialValue?: T) {
   const subject = new ReplaySubject<any>(1) as ReplaySubject<any>
-  return enhanceSubjectWithAureliaTwoWay(subject, initialValue)
+  // enhanceSubjectWithAureliaTwoWay(subject, initialValue)
+  
+  if (initialValue !== undefined) {
+    subject.next({ value: initialValue, origin: ChangeOrigin.View })
+    // subject.next(initialValue)
+  }
+  return subject
 }
 
 export type ValueAndOrigin<T> = {value: T, origin: ChangeOrigin}
 
 // export class AureliaSubject<T> extends ReplaySubject<T> {
 // }
-
+/*
+// @autoinject
 export class AureliaSubjectWrapper {
   _value;
   
@@ -121,17 +200,24 @@ export class AureliaSubjectWrapper {
     return this._value
   }
   set value(value) {
+    if (this._value === value) return
     console.log('setting value from view')    
     // set from view
     // this._value = value
-    this.observable.next(value)
+    this.observable.next({ value, origin: ChangeOrigin.View })
   }
   
+  // constructor(observerLocator: ObserverLocator) {
+  //   const observer = observerLocator.getObserver(this, '_value')
+  //   observer.subscribe
+  // }
+  
   constructor(public observable: Subject<any>) {
-    observable.subscribe(value => this._value = value)
+    observable.subscribe(change => this._value = change.value)
   }
 }
-
+*/
+/*
 const observableGetter = function() {
   return this._value
 } as (() => any) & {
@@ -173,8 +259,58 @@ Object.defineProperty(AureliaSubjectWrapper.prototype, 'value', {
   enumerable: true,
   configurable: true
 })
+*/
 
-function enhanceSubjectWithAureliaTwoWay<T>(subject: ReplaySubject<ValueAndOrigin<T>>, initialValue?: T) {
+function enhanceSubjectWithAureliaValue<T>(subject: ReplaySubject<T>, initialValue?: T) {
+  // subject:  & { _bind:()=>void, _unbind:()=>void }
+  subject['_bind'] = function() {
+    this._aureliaSubscriptionCount = (this._aureliaSubscriptionCount || 0) + 1
+    if (!this._aureliaSubscription)
+      this._aureliaSubscription = this.subscribe(change => {
+        if (this._value !== change.value) {
+          this._value = change.value
+          this['_onValueUpdateCallables'].forEach(callable => callable())
+        }
+      })
+  }
+  
+  subject['_unbind'] = function() {
+    this._aureliaSubscriptionCount = (this._aureliaSubscriptionCount || 0) - 1
+    if (this._aureliaSubscriptionCount === 0) {    
+      this._aureliaSubscription.unsubscribe()
+      this._aureliaSubscription = undefined
+    }
+  }
+  
+  const getter = function() {
+    // console.log('getting', this._value)
+    return this._value
+  } as (() => any) & { dependencies: Array<string> }
+  getter.dependencies = ['_value']
+
+  if (typeof subject.next === 'function')
+    Object.defineProperty(subject, 'value', {
+      get: getter,
+      set: function(newValue) {
+        // let relatedBindings:Set<Binding> = this._relatedBindings
+        // relatedBindings.forEach(binding => binding.call()) 
+        // currentValue = newValue
+        if (newValue !== this._value)
+          this.next({ value: newValue, origin: ChangeOrigin.View }) // perhaps an object?
+      },
+      enumerable: true,
+      configurable: true
+    })
+  else
+    Object.defineProperty(subject, 'value', {
+      get: getter,
+      enumerable: true,
+      configurable: true
+    })
+
+  subject['_onValueUpdateCallables'] = new Set()
+  
+  /*
   let currentValue = initialValue
   
   const observableGetter = function() {
@@ -225,34 +361,41 @@ function enhanceSubjectWithAureliaTwoWay<T>(subject: ReplaySubject<ValueAndOrigi
     enumerable: true,
     configurable: true
   })
-  
-  if (initialValue !== undefined) {
-    subject.next({ value: initialValue, origin: ChangeOrigin.View })
-  }
-  
-  return subject
+  */
+  // return new AureliaSubjectWrapper(subject)
 }
 
 
 
 export class ObservableSignalBindingBehavior {
-  bind(binding: Binding & { signalingObservers: Array<Subscription>, call: (context)=>void }, source, ...observables: Array<Observable<any>>) {
+  bind(binding: Binding & { signalingObservers: Array<{unsubscribe: () => void}>, call: (context)=>void }, source, ...observables: Array<Observable<any>>) {
+    // console.log('observableSignal bound', binding, source, observables[0])
     if (!binding.updateTarget) {
       throw new Error('Only property bindings and string interpolation bindings can be signaled.  Trigger, delegate and call bindings cannot be signaled.');
     }
     if (!observables || observables.length === 0)
-      throw new Error('Observable name is required.')
+      throw new Error('Observable parameter is required.')
 
-    const signalingObservers = new Array<Subscription>()
+    const signalingObservers = new Array<{unsubscribe: () => void}>()
     for (let observable of observables) {
-      signalingObservers.push(
-        observable.subscribe(next => binding.call(sourceContext))
-      )
+      if (observable['_onValueUpdateCallables']) {
+        const callable = () => binding.call(sourceContext)
+        observable['_onValueUpdateCallables'].add(callable)
+        signalingObservers.push({ unsubscribe: () => observable['_onValueUpdateCallables'].remove(callable) })
+      }
+      else
+        signalingObservers.push(
+          observable.subscribe(next => binding.call(sourceContext))
+          // observable.subscribe(next => {
+          //   console.log('calling!')
+          //   binding.call(source)
+          // })
+        )
     }
     binding.signalingObservers = signalingObservers
   }
 
-  unbind(binding: Binding & { signalingObservers: Array<Subscription> }, source) {
+  unbind(binding: Binding & { signalingObservers: Array<Subscription> }, sourceContext) {
     if (binding.signalingObservers) {
       for (let subscription of binding.signalingObservers) {
         subscription.unsubscribe()
@@ -262,7 +405,43 @@ export class ObservableSignalBindingBehavior {
   }
 }
 
+// export class ComputedFromSignalBindingBehavior {
+//   bind(binding: Binding & { signalingObservers: Array<{unsubscribe: () => void}>, call: (context)=>void }, source, ...observables: Array<Observable<any>>) {
+//     // console.log('observableSignal bound', binding, source, observables[0])
+//     if (!binding.updateTarget) {
+//       throw new Error('Only property bindings and string interpolation bindings can be signaled.  Trigger, delegate and call bindings cannot be signaled.');
+//     }
+//     if (!observables || observables.length === 0)
+//       throw new Error('Observable parameter is required.')
 
+//     const signalingObservers = new Array<{unsubscribe: () => void}>()
+//     for (let observable of observables) {
+//       if (observable['_onValueUpdateCallables']) {
+//         const callable = () => binding.call(sourceContext)
+//         observable['_onValueUpdateCallables'].add(callable)
+//         signalingObservers.push({ unsubscribe: () => observable['_onValueUpdateCallables'].remove(callable) })
+//       }
+//       else
+//         signalingObservers.push(
+//           observable.subscribe(next => binding.call(sourceContext))
+//           // observable.subscribe(next => {
+//           //   console.log('calling!')
+//           //   binding.call(source)
+//           // })
+//         )
+//     }
+//     binding.signalingObservers = signalingObservers
+//   }
+
+//   unbind(binding: Binding & { signalingObservers: Array<Subscription> }, sourceContext) {
+//     if (binding.signalingObservers) {
+//       for (let subscription of binding.signalingObservers) {
+//         subscription.unsubscribe()
+//       }
+//       binding.signalingObservers = undefined
+//     }
+//   }
+// }
 
 // not a good idea:
 
