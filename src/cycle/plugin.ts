@@ -55,6 +55,8 @@ export interface CollectionChange<T> {
   item: T & { changes$: Observable<ContextChanges> };
 }
 
+export type CycleValue<T> = Observable<T> & { now?: T };
+
 export type ValueAndOrigin<T> = {now: T, origin: ChangeOrigin}
 
 export type Collection<T> = Subject<CollectionChanges<T>> & { now: Array<T> }
@@ -71,12 +73,31 @@ export function makeBindingDrivers(context) {
   let changes$: Subject<ContextChanges> = context.changes$ || new Subject<ContextChanges>()
   changes$['_bindingType'] = BindingType.Context
   
+  context._onBindHook = function() {
+    changes$.next({ 
+      property: null, 
+      origin: ChangeOrigin.ViewModel, 
+      now: null, 
+      type: ChangeType.Bind
+    })
+  }
+  context._onUnbindHook = function() {
+    changes$.next({ 
+      property: null, 
+      origin: ChangeOrigin.ViewModel, 
+      now: null, 
+      type: ChangeType.Unbind
+    })
+    if (typeof this._postUnbindHook === 'function')
+      this._postUnbindHook()
+  }
+  /*
   const originalBind = context.constructor.prototype.bind as Function
   // if (!originalBind)
   //   context.constructor.prototype.bind = function() {}
   
   context.bind = function bind() {
-    console.log('binding')
+    // console.log('binding')
     if (originalBind)
       originalBind.apply(this, arguments)
     changes$.next({ 
@@ -92,7 +113,7 @@ export function makeBindingDrivers(context) {
   //   context.constructor.prototype.unbind = function() {}
 
   context.unbind = function unbind() {
-    console.log('unbinding')
+    // console.log('unbinding')
     if (originalUnbind)
       originalUnbind.apply(this, arguments)
     changes$.next({ 
@@ -104,6 +125,7 @@ export function makeBindingDrivers(context) {
     if (typeof this._postUnbindHook === 'function')
       this._postUnbindHook()
   }
+  */
   
   Object.keys(context)
     .filter(propName => typeof context[propName].subscribe === 'function')
@@ -351,7 +373,7 @@ export function value<T>(initialValue?: T) {
   // }
   
   // we're cheating a bit with types
-  return subject as Observable<T>
+  return subject as CycleValue<T>
 }
 
 function enhanceSubjectWithAureliaValue<T>(subject: BehaviorSubject<ValueAndOrigin<T>>, initialValue?: T) {
@@ -445,6 +467,27 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
   viewResources.registerValueConverter('trigger', valueConverterInstance)
   // viewResources.registerBindingBehavior('trigger', bindingBehaviorInstance)
   
+  const originalBind = View.prototype.bind
+  View.prototype.bind = function bind(bindingContext, overrideContext, _systemUpdate) {
+    const wasBound = this.isBound
+    originalBind.apply(this, arguments)
+    
+    if (!wasBound) {
+      this.resources._invokeHook('afterBind', this);
+    }
+  }
+  
+  const originalUnbind = View.prototype.unbind
+  View.prototype.unbind = function unbind() {
+    const wasBound = this.isBound
+    const bindingContext = this.bindingContext
+    originalUnbind.apply(this, arguments)
+    
+    if (wasBound) {
+      this.resources._invokeHook('afterUnbind', bindingContext);
+    }
+  }
+  
   const hooks = {
     beforeBind: function (view: View & {bindingContext}) {
       const context = view.bindingContext
@@ -470,6 +513,9 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
       const disposeFunction = Cycle.run(context.cycle.bind(context), sources)
       
       context._cycleDispose = disposeFunction
+      
+      if (typeof context._onBindHook === 'function')
+        context._onBindHook()
     },
     beforeUnbind: function (view: View & {bindingContext}) {
       const context = view.bindingContext
@@ -491,8 +537,20 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
             observable._unbind()
         })
       
-      context._cycleDispose()   
+      context._cycleDispose()
+      
+      if (typeof context._onUnbindHook === 'function')
+        context._onUnbindHook()      
     },
+    // afterBind: function (view: View & {bindingContext}) {
+    //   const context = view.bindingContext
+    //   console.log('afterBind')
+    //   context._onBindHook()
+    // },
+    // afterUnbind: function (context) {
+    //   console.log('afterUnbind')
+    //   context._onUnbindHook()
+    // }
   } as ViewEngineHooks
   
   viewResources.registerViewEngineHooks(hooks)
