@@ -2,41 +2,49 @@ import 'todomvc-common/base.css'
 import 'todomvc-app-css/index.css'
 
 import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
-import {action as a, value as v, collection} from '../cycle/plugin'
+import {action as a, value as v, collection, ChangeOrigin, CycleDriverContext, ContextChanges, ChangeType} from '../cycle/plugin'
 import {computedFrom} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
 
 
-export class Todos {
+export class Todos implements CycleDriverContext {
+  changes$: Subject<ContextChanges>
+  
   addNewTodoActions$ = a()
   destroyTodo$ = a()
-  newTodoTitleChanges$ = v()
+  newTodoTitle$ = v()
   
   completionChanges$ = v() //new Subject() //a() // this could be an aggregate?
+  completionChangesWithInitial$ = v() //new Subject() //a() // this could be an aggregate?
   
   // todos$ = v()
   todos$ = collection<TodoItem>()
   filter$ = a()
   currentFilter$ = v()
   
-  attached() {
-    this.completionChanges$.subscribe(completionChange => console.log('completion change', completionChange))
+  // attached() {
+  //   this.completionChanges$.subscribe(completionChange => console.log('completion change', completionChange))
+  // }
+  bind() {
+    // console.log('bind WTF')
   }
+  unbind() {}
+
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitleChanges$, filter$, todos$ }: this) { //: this
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, changes$ }: this) { //: this
     console.log('we are cycling TODOS!', arguments, this)
     
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
-      newTodoTitleChanges$, 
+      newTodoTitle$, 
       (action, title) => title
     )
     
     const newTodo$ = newTodoProspective$
       .filter(title => title != '')
-      .map(title => ({ action: 'added', item: new TodoItem(title, false, destroyTodo$) }))
+      .map(title => ({ action: 'added', item: new TodoItem(title, false, this.destroyTodo$) }))
     
     // reset title after adding
-    const newTodoTitle$ = newTodoTitleChanges$
+    newTodoTitle$ = newTodoTitle$
       .merge(newTodo$.map(todo => ''))
       .startWith('')
 
@@ -46,8 +54,8 @@ export class Todos {
     const todoChanges$ = Observable
       .merge<any, any>(newTodo$, removedTodo$)
       .startWith(
-        { action: 'added', item: new TodoItem('incomplete', false, destroyTodo$) },
-        { action: 'added', item: new TodoItem('completed', true, destroyTodo$) }
+        { action: 'added', item: new TodoItem('incomplete', false, this.destroyTodo$) },
+        { action: 'added', item: new TodoItem('completed', true, this.destroyTodo$) }
       )// as Observable<{ action:string, todo:ITodo }>
     
     // const todos$ = todoChanges$
@@ -72,7 +80,22 @@ export class Todos {
     // so my observable needs to be triggered when any of todo.completed changes
     const completionChanges$ = todos$
       .filter(change => change.property === 'isCompleted$')
-      .do(completionChange => console.log('completion change', completionChange))
+      // .filter(change => change.property === 'isCompleted$' && change.origin !== ChangeOrigin.InitialValue)
+      // .merge(newTodo$).merge(removedTodo$)
+      // .map(value => 1)
+      // .scan<number>((total, change) => total + change)
+
+    const completionChangesWithInitial$ = todos$
+      .filter(change => change.property === 'isCompleted$' || change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
+      // .merge(newTodo$).merge(removedTodo$)
+      // .map(value => 1)
+      // .scan<number>((total, change) => total + change)
+      
+    // todos$.filter(change => change.property === null).subscribe(change => console.log('awesome', change))
+      
+    // problem is - this included the initial "change" (when BehaviorSubject retriggering was on)
+    
+      //.do(completionChange => console.log('completion change', completionChange))
 
     // merge(todo.completed, todo.completed, ...)
     // and it's value needs to be the todo object
@@ -88,39 +111,54 @@ export class Todos {
       todos$: todoChanges$,
       newTodoTitle$,
       currentFilter$,
-      completionChanges$
+      completionChanges$,
+      completionChangesWithInitial$
     }
   }
 }
 
+export class FilterTodoValueConverter {
+  toView(todos: Array<TodoItem>, currentFilter) {
+    //, filteredItems = new Array<TodoItem>()
+    // if (!filteredItems)
+    //   filteredItems = Array.from(todos)
+    
+    // todos.forEach(todo => {
+    //   let lastIndex = -1
+    //   if (filteredItems.indexOf(todo) < 0)
+    // })
+    
+    console.log('filtering:', todos, currentFilter)
+    // return todos;
+    switch (currentFilter) {
+      case 'active':
+        return todos.filter(todo => !todo.isCompleted$.now)
+      case 'completed':
+        return todos.filter(todo => todo.isCompleted$.now)
+      default:
+        return todos
+    }
+  }
+}
+/*
 export class FilterTodoValueConverter {
   toView(todos: Array<any>, currentFilter) {
     console.log('filtering:', todos, currentFilter)
     // return todos;
     switch (currentFilter) {
       case 'active':
-        // return todos.filter(todo => !todo.completed.last)
-        return todos.filter(todo => !todo.isCompleted$.value)
+        return todos.filter(todo => !todo.isCompleted$.now)
       case 'completed':
-        return todos.filter(todo => todo.isCompleted$.value)
-        // return todos.filter(todo => todo.completed.last)
+        return todos.filter(todo => todo.isCompleted$.now)
       default:
         return todos
     }
   }
 }
-
-export class CountIncompleteObservableValueConverter {
-  toView(todos: Observable<Array<any>> & { value: Array<any> }) {
-    const count = todos && todos.value ? todos.value.filter(todo => !todo.isCompleted$.value).length : 0
-    console.log('counting incomplete', todos)
-    return count
-  }
-}
-
+*/
 export class CountIncompleteValueConverter {
   toView(todos: Array<any>) {
-    const count = todos ? todos.filter(todo => !todo.isCompleted$.value).length : 0
+    const count = todos ? todos.filter(todo => !todo.isCompleted$.now).length : 0
     console.log('counting incomplete', todos)
     return count
   }

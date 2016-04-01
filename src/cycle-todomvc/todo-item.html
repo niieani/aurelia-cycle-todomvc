@@ -1,14 +1,15 @@
-<template class="${isCompleted$.value ? 'completed' : ''} ${isEditing$.value ? 'editing' : ''}">
-  <!--<li class="${isCompleted$.value ? 'completed' : ''} ${isEditing$.value ? 'editing' : ''}">-->
+<template>
+   <!--class="${isCompleted$.now ? 'completed' : ''} ${isEditing$.now ? 'editing' : ''}">-->
+  <li class="${isCompleted$.now ? 'completed' : ''} ${isEditing$.now ? 'editing' : ''}">
   
   <!-- These are here just to show the structure of the list items -->
   <!-- List items should get the class `editing` when editing and `completed` when marked as completed -->
   <div class="view">
-    <input class="toggle" type="checkbox" checked.bind="isCompleted$.value">
-    <label dblclick.trigger="startEdit$.action()">${title$.value}</label>
+    <input class="toggle" type="checkbox" checked.bind="isCompleted$.now">
+    <label dblclick.trigger="startEdit$.action()">${title$.now}</label>
     <button class="destroy" click.delegate="destroy$.action($this)"></button>
   </div>
-  <input class="edit" keyup.delegate="keyUp$.action($event)" blur.trigger="doneEdit$.action()" value.bind="title$.value">
+  <input class="edit" keyup.delegate="keyUp$.action($event)" blur.trigger="doneEdit$.action()" value.bind="title$.now">
   
-  <!--</li>-->
+  </li>
 </template>

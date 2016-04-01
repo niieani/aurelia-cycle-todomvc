@@ -3,7 +3,7 @@
     <header class="header">
       <h1>todos</h1>
       <form submit.delegate="addNewTodoActions$.action()">
-        <input value.bind="newTodoTitleChanges$.value" class="new-todo" placeholder="What needs to be done?" autofocus>
+        <input value.bind="newTodoTitle$.now" class="new-todo" placeholder="What needs to be done?" autofocus>
       </form>
     </header>
     <!-- This section should be hidden by default and shown when there are todos -->
@@ -12,7 +12,7 @@
       <label for="toggle-all">Mark all as complete</label>
       <ul class="todo-list">
         <li as-element="compose"
-            repeat.for="todo of todos$.value | filterTodo: currentFilter$.value | trigger: completionChanges$.value"
+            repeat.for="todo of todos$.now | filterTodo: currentFilter$.now | trigger: completionChanges$.now"
             view-model.bind="todo">
         </li>
       </ul>
@@ -20,18 +20,18 @@
     <!-- This footer should hidden by default and shown when there are todos -->
     <footer class="footer">
       <!-- This should be `0 items left` by default -->
-      <span class="todo-count"><strong>${todos$.value | countIncomplete | trigger: completionChanges$.value}</strong> item left</span>
+      <span class="todo-count"><strong>${todos$.now | countIncomplete | trigger: completionChangesWithInitial$.now}</strong> item left</span>
        <!--& observableSignal: completionChanges$-->
        <!---->
       <ul class="filters">
         <li>
-          <a class="${currentFilter$.value == 'all' ? 'selected' : ''}" href="#/" click.delegate="filter$.action('all')">All</a>
+          <a class="${currentFilter$.now == 'all' ? 'selected' : ''}" href="#/" click.delegate="filter$.action('all')">All</a>
         </li>
         <li>
-          <a class="${currentFilter$.value == 'active' ? 'selected' : ''}" href="#/active" click.delegate="filter$.action('active')">Active</a>
+          <a class="${currentFilter$.now == 'active' ? 'selected' : ''}" href="#/active" click.delegate="filter$.action('active')">Active</a>
         </li>
         <li>
-          <a class="${currentFilter$.value == 'completed' ? 'selected' : ''}" href="#/completed" click.delegate="filter$.action('completed')">Completed</a>
+          <a class="${currentFilter$.now == 'completed' ? 'selected' : ''}" href="#/completed" click.delegate="filter$.action('completed')">Completed</a>
         </li>
       </ul>
       <!-- Hidden if no completed items are left ↓ -->

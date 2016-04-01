@@ -11,35 +11,28 @@ const ESC_KEY = 27
 export class TodoItem {
   // cycleDrivers = { TodoItemView: makeAureliaDriver(this) }
   
-  // public values
-  // @bindable title;
-  // @bindable completed;
-  // // @bindable destroyAction;
-  // @bindable destroy;
-  // editing = c(true);
-  // // something = true;
-  // @bindable publicProps;
-  // bind() {
-  //   console.log('bind item', this)
-  //   // delete this.destroyAction
-  // }
-  
-  constructor(title, completed, public destroy) {
-    // this.title.next({ value: title })
-    // this.completed.next({ value: completed })
+  constructor(title, completed, public destroy$) {
     this.title$ = v(title)
     this.isCompleted$ = v(completed)
+    // console.log('new todo', this.title$)
   }
   
-  title$ = v(); //AureliaSubjectWrapper;
-  isCompleted$ = v(); // AureliaSubjectWrapper; // = v()
+  bind() {
+    // console.log('bind WTF')
+  }
+  
+  unbind() {}
+  
+  title$: Observable<string>; // = v(); //AureliaSubjectWrapper;
+  isCompleted$; // = v(); // AureliaSubjectWrapper; // = v()
   isEditing$ = v()
   
   startEdit$ = a()
   keyUp$ = a()
   doneEdit$: Observable<any> = a()
   
-  cycle({ startEdit$, keyUp$, doneEdit$ }: this) {
+  cycle({ startEdit$, keyUp$, doneEdit$, title$ }: this) {
+    console.log('cycling ITEM', this)
     // startEdit.subscribe(next => console.log('starting edit', next))
 
     const cancelEdit$ = keyUp$
@@ -48,6 +41,7 @@ export class TodoItem {
     doneEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ENTER_KEY)
       .merge(doneEdit$)
+      .throttleTime(300)
       
     // THE EDITING STREAM
     // Create a stream that emits booleans that represent the
@@ -59,9 +53,18 @@ export class TodoItem {
         cancelEdit$.map(() => false)
       )
       .startWith(false)
+      .distinctUntilChanged()
+      // .do(next => console.log('is editing', next))
+    
+    const destroy$ = doneEdit$
+      .withLatestFrom(title$, (action, title) => title)
+      .filter(value => value === '')
+      .map(title => [this])
+    // destroy$.subscribe(next => console.log('would destryo'))
     
     return {
-      isEditing$
+      isEditing$,
+      destroy$
     }
   }
 }
