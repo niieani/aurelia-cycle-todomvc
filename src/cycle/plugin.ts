@@ -69,7 +69,7 @@ export function makeBindingDrivers(context) {
   const drivers = {}
   const observables = {}
   
-  // mega-observable
+  // mega-observable with all everything happening on the context
   let changes$: Subject<ContextChanges> = context.changes$ || new Subject<ContextChanges>()
   changes$['_bindingType'] = BindingType.Context
   
@@ -91,54 +91,18 @@ export function makeBindingDrivers(context) {
     if (typeof this._postUnbindHook === 'function')
       this._postUnbindHook()
   }
-  /*
-  const originalBind = context.constructor.prototype.bind as Function
-  // if (!originalBind)
-  //   context.constructor.prototype.bind = function() {}
-  
-  context.bind = function bind() {
-    // console.log('binding')
-    if (originalBind)
-      originalBind.apply(this, arguments)
-    changes$.next({ 
-      property: null, 
-      origin: ChangeOrigin.ViewModel, 
-      now: null, 
-      type: ChangeType.Bind
-    })
-  }
-  
-  const originalUnbind = context.constructor.prototype.unbind as Function
-  // if (!originalUnbind)
-  //   context.constructor.prototype.unbind = function() {}
-
-  context.unbind = function unbind() {
-    // console.log('unbinding')
-    if (originalUnbind)
-      originalUnbind.apply(this, arguments)
-    changes$.next({ 
-      property: null, 
-      origin: ChangeOrigin.ViewModel, 
-      now: null, 
-      type: ChangeType.Unbind
-    })
-    if (typeof this._postUnbindHook === 'function')
-      this._postUnbindHook()
-  }
-  */
   
   Object.keys(context)
     .filter(propName => typeof context[propName].subscribe === 'function')
     .forEach(propName => {
       const observable = context[propName] as BehaviorSubject<any> & { _bindingType; _now }
       
-      // if (typeof observable.next === 'function') {
       observable['_contextChangesTrigger'] = (change: BindingChange<any>) => 
         changes$.next({ property: propName, now: change.now, origin: change.origin, type: change.type })
       
       /*
       if (observable instanceof BehaviorSubject) {
-        // initial value
+        // emit initial value
         const currentValue = observable.getValue()
         const change = Object.assign({}, currentValue, { origin: ChangeOrigin.InitialValue })
         if (currentValue !== undefined)
@@ -146,15 +110,6 @@ export function makeBindingDrivers(context) {
         // const tempSub = observable.subscribe(change => observable['_contextChangesTrigger'](change))
       }
       */
-      
-      // }
-      // 
-      // if (!context._cycleChangesMerged) {
-      //   changes$
-      //   observable
-      //     .map(change => ({ property: propName, now: change.now, origin: change.origin }))
-      //   // changes$ = changes$.merge(observable.map(change => ({ property: propName, now: change.now, origin: change.origin })))
-      // }
       
       observables[propName] = observable
       
@@ -179,11 +134,10 @@ export function makeBindingDrivers(context) {
 
     }
     // TODO: add setter drivers on non-observable properties
+    // use the observer from Aurelia to convert the values to Observables
   )
   if (!context.changes$) {
     context.changes$ = changes$
-    // context._cycleChangesMerged = true
-    // drivers['changes$'] = makeOneWayBindingDriver(changes$)
   }
   return { drivers, observables }
 }
@@ -237,10 +191,6 @@ export function makeContextDriver(contextObservable: Subject<ContextChanges>) {
     //   },
     // }
     return contextObservable.asObservable()
-    // return contextObservable
-    //   .filter(change => change !== undefined)
-    //   // .filter(change => change !== undefined && change.origin === ChangeOrigin.View)
-    //   .map(change => change.now)
   }
   driverCreator.streamAdapter = rxjsAdapter
   return driverCreator
@@ -465,28 +415,6 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
   const viewResources = frameworkConfig.aurelia.resources
   const valueConverterInstance = frameworkConfig.container.get(TriggerValueConverter)
   viewResources.registerValueConverter('trigger', valueConverterInstance)
-  // viewResources.registerBindingBehavior('trigger', bindingBehaviorInstance)
-  
-  const originalBind = View.prototype.bind
-  View.prototype.bind = function bind(bindingContext, overrideContext, _systemUpdate) {
-    const wasBound = this.isBound
-    originalBind.apply(this, arguments)
-    
-    if (!wasBound) {
-      this.resources._invokeHook('afterBind', this);
-    }
-  }
-  
-  const originalUnbind = View.prototype.unbind
-  View.prototype.unbind = function unbind() {
-    const wasBound = this.isBound
-    const bindingContext = this.bindingContext
-    originalUnbind.apply(this, arguments)
-    
-    if (wasBound) {
-      this.resources._invokeHook('afterUnbind', bindingContext);
-    }
-  }
   
   const hooks = {
     beforeBind: function (view: View & {bindingContext}) {
@@ -541,16 +469,7 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
       
       if (typeof context._onUnbindHook === 'function')
         context._onUnbindHook()      
-    },
-    // afterBind: function (view: View & {bindingContext}) {
-    //   const context = view.bindingContext
-    //   console.log('afterBind')
-    //   context._onBindHook()
-    // },
-    // afterUnbind: function (context) {
-    //   console.log('afterUnbind')
-    //   context._onUnbindHook()
-    // }
+    }
   } as ViewEngineHooks
   
   viewResources.registerViewEngineHooks(hooks)

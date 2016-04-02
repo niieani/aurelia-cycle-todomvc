@@ -9,23 +9,20 @@ const ESC_KEY = 27
 export class TodoItem {
   // cycleDrivers = { }
   
-  constructor(title, completed, public destroy$) {
+  constructor(title, completed, public destroy$, public toggle$: Observable<any>, public clearIfCompleted$: Observable<any>) {
     this.title$ = v(title)
     this.isCompleted$ = v(completed)
   }
   
-  bind() {}
-  unbind() {}
-  
   title$: CycleValue<string>;
-  isCompleted$: CycleValue<string>;
+  isCompleted$: CycleValue<boolean>;
   isEditing$ = v()
   
   startEdit$ = a()
   keyUp$ = a()
   doneEdit$: Observable<any> = a()
   
-  cycle({ startEdit$, keyUp$, doneEdit$, title$ }: this) {
+  cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: this) {
     // console.log('cycling ITEM', this)
     
     const cancelEdit$ = keyUp$
@@ -49,15 +46,26 @@ export class TodoItem {
       .startWith(false)
       .distinctUntilChanged()
     
+    const clearCommand = clearIfCompleted$.withLatestFrom(
+      isCompleted$.filter(completed => completed === true), 
+      (action, completed) => [this]
+    )
+    
     // Destroy when somebody gives a todo an empty name
     const destroy$ = doneEdit$
       .withLatestFrom(title$, (action, title) => title)
       .filter(value => value === '')
       .map(title => [this])
+      .merge(clearCommand)
+    
+    const toggledIsCompleted$ = toggle$.
+      withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
+      // withLatestFrom(isCompleted$, (toggle, isCompleted) => !isCompleted)
     
     return {
       isEditing$,
-      destroy$
+      destroy$,
+      isCompleted$: toggledIsCompleted$
     }
   }
 }
