@@ -6,8 +6,8 @@ import {action as a, value as v, collection, ChangeOrigin, CycleDriverContext, C
 import {computedFrom} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
 
-export class Todos implements CycleDriverContext {
-  changes$: Subject<ContextChanges>
+export class Todos { // implements CycleDriverContext
+  // changes$: Subject<ContextChanges>
   
   addNewTodoActions$ = a()
   destroyTodo$ = a()
@@ -23,12 +23,11 @@ export class Todos implements CycleDriverContext {
   toggleAll$ = a()
   clearCompleted$ = a()
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, changes$ }: this) { //: this
-    console.log('we are cycling TODOS!', arguments, this)
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$ }: this) {
     
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
       newTodoTitle$, 
-      (action, title) => title
+      (action, title) => title as string
     )
     
     const newTodo$ = newTodoProspective$
@@ -90,7 +89,7 @@ export class FilterTodoValueConverter {
 }
 
 export class CountIncompleteValueConverter {
-  toView(todos: Array<any>) {
+  toView(todos: Array<TodoItem>) {
     const count = todos ? todos.filter(todo => !todo.isCompleted$.now).length : 0
     // console.log('counting incomplete', todos)
     return count

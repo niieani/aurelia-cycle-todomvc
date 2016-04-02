@@ -7,24 +7,28 @@ const ESC_KEY = 27
 
 @useView('./todo-item.html')
 export class TodoItem {
+  // You may define additional drivers here:
   // cycleDrivers = { }
   
-  constructor(title, completed, public destroy$, public toggle$: Observable<any>, public clearIfCompleted$: Observable<any>) {
+  constructor(
+    title: string, completed: boolean, 
+    public destroy$: Observable<any>, 
+    public toggle$: Observable<any>, 
+    public clearIfCompleted$: Observable<any>
+  ) {
     this.title$ = v(title)
     this.isCompleted$ = v(completed)
   }
   
   title$: CycleValue<string>;
   isCompleted$: CycleValue<boolean>;
-  isEditing$ = v()
+  isEditing$ = v<boolean>()
   
   startEdit$ = a()
   keyUp$ = a()
-  doneEdit$: Observable<any> = a()
+  doneEdit$ = a() as Observable<any>
   
   cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: this) {
-    // console.log('cycling ITEM', this)
-    
     const cancelEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ESC_KEY)
 
@@ -34,7 +38,6 @@ export class TodoItem {
       .merge(doneEdit$)
       .throttleTime(300)
     
-    // THE EDITING STREAM
     // Create a stream that emits booleans that represent the
     // "is editing" state.
     const isEditing$ = Observable
