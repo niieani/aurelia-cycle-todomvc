@@ -1,4 +1,3 @@
-import {View} from 'aurelia-templating'
 import {Observable, Observer, Subscription, BehaviorSubject, ReplaySubject, Subject, Subscriber} from 'rxjs/Rx'
 
 import Cycle from './core' // '@cycle/core' // /lib/index
@@ -7,7 +6,7 @@ import { DriverFunction } from '@cycle/base'
 import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom, autoinject} from 'aurelia-framework';
 import {BindingSignaler} from 'aurelia-templating-resources'
 
-import {ViewEngineHooks} from 'aurelia-templating'
+import {ViewEngineHooks, View, Controller} from 'aurelia-templating'
 
 export {Observable, Observer, Subscription, BehaviorSubject, ReplaySubject, Subject} from 'rxjs/Rx'
 
@@ -30,6 +29,7 @@ export class ChangeType {
   static Removed = 'removed'
   static Bind = 'bind'
   static Unbind = 'unbind'
+  static Signal = 'signal'
 }
 
 export class ChangeOrigin {
@@ -63,15 +63,15 @@ export type CycleValue<T> = Observable<T> & { now?: T };
 export type ValueAndOrigin<T> = {now: T, origin: ChangeOrigin}
 
 export type Collection<T> = Subject<CollectionChanges<T>> & { now: Array<T> }
+export type CycleSourcesAndSinks = { [s: string]: Observable<any> }
 
-export interface CycleDriverContext {
-  changes$: Subject<ContextChanges>;
+export interface CycleContext {
+  changes$?: Subject<ContextChanges>;
+  cycle: (sources: CycleSourcesAndSinks) => CycleSourcesAndSinks;
 }
 
-export function makeBindingDrivers(context: any, observerLocator: ObserverLocator, strategyLocator: RepeatStrategyLocator) {
+export function makeBindingDrivers(context: any, observerLocator: ObserverLocator, strategyLocator: RepeatStrategyLocator, signaler: BindingSignaler) {
   const drivers = {}
-  // const observables = {}
-  const observables = new Set<any>()
   
   // mega-observable with all everything happening on the context
   let changes$: Subject<ContextChanges> = context.changes$ || new Subject<ContextChanges>()
@@ -109,12 +109,17 @@ export function makeBindingDrivers(context: any, observerLocator: ObserverLocato
   }).bind(context)
   
   const onUnbind = (function() {
+    // console.log('unbind!!')
     changes$.next({ 
       property: null, 
       origin: ChangeOrigin.ViewModel, 
       now: null, 
       type: ChangeType.Unbind
     })
+  }).bind(context)
+  
+  const dispose = (function() {
+    console.log('disposing')
     if (typeof this._postUnbindHook === 'function')
       this._postUnbindHook()
   }).bind(context)
@@ -122,59 +127,105 @@ export function makeBindingDrivers(context: any, observerLocator: ObserverLocato
   const disposeMethods = new Set<Function>()
   
   if (context.constructor.cycleActions) {
-    context.cycleActionsHandler$ = context.cycleActionsHandler$ || new Subject<ContextChanges>()
     const actions = context.constructor.cycleActions as Array<string>
     
+    // console.log('adding actions', actions)
+    
     actions
-      .map(propertyName => `${propertyName}$`)
-      .filter(propertyName => !context[propertyName])
+      // .map(propertyName => `${propertyName}$`)
+      // .filter(propertyName => !context[propertyName])
       .forEach(propertyName => {
-        context[propertyName] = function() {
-          const next = { property: propertyName, origin: ChangeOrigin.View, now: Array.from(arguments), type: ChangeType.Action }
-          context.cycleActionsHandler$.next(next)
-          
-          changes$.next(next)
-        }
-        drivers[propertyName] = makeContextActionDriver(propertyName, context.cycleActionsHandler$, changes$)
+        const { driverCreator, dispose } = makeContextActionDriver(context, propertyName, changes$)
+        drivers[`${propertyName}$`] = driverCreator
+        disposeMethods.add(dispose)        
       })
   }
   
   if (context.constructor.cycleOneWay) {
-    context.cycleOneWayHandler$ = context.cycleOneWayHandler$ || new Subject<ContextChanges>()
+    // context.cycleOneWayHandler$ = context.cycleOneWayHandler$ || new Subject<ContextChanges>()
     const oneWay = context.constructor.cycleOneWay as Array<string>
     
     oneWay
-      .map(propertyName => `${propertyName}$`)
+      // .map(propertyName => `${propertyName}$`)
       .forEach(propertyName => {
+        // const originalPropertyName = propertyName
+        // propertyName = `${propertyName}$`
         const triggerContextChange = (change: BindingChange<any>) => 
           changes$.next({ property: propertyName, now: change.now, origin: change.origin, type: change.type })
 
-        const aureliaObserver = observerLocator.getObserver(context, propertyName)
-        drivers[propertyName] = makeContextSetterDriver(context, propertyName, triggerContextChange)
+        // const aureliaObserver = observerLocator.getObserver(context, propertyName)
+        drivers[`${propertyName}$`] = makeContextSetterDriver(context, propertyName, triggerContextChange)
       })
   }
   
   if (context.constructor.cycleTwoWay) {
-    context.cycleTwoWayHandler$ = context.cycleTwoWayHandler$ || new Subject<ContextChanges>()
+    // context.cycleTwoWayHandler$ = context.cycleTwoWayHandler$ || new Subject<ContextChanges>()
     const twoWay = context.constructor.cycleTwoWay as Array<string>
     
     twoWay
-      .map(propertyName => `${propertyName}$`)
+      // .map(propertyName => `${propertyName}$`)
       .forEach(propertyName => {
         const triggerContextChange = (change: BindingChange<any>) => 
           changes$.next({ property: propertyName, now: change.now, origin: change.origin, type: change.type })
 
-        // const value = drivers[propertyName]
-        // const strategy = strategyLocator.getStrategy(value)
-        // if (!strategy || strategy instanceof NullRepeatStrategy) {
-        // non-repeatable
-        const aureliaObserver = observerLocator.getObserver(context, propertyName)
-        let { driverCreator, dispose } = makeContextPropertyDriver(aureliaObserver, triggerContextChange)
-        drivers[propertyName] = driverCreator
+        let { driverCreator, dispose } = makeContextPropertyDriver(context, propertyName, observerLocator, triggerContextChange)
+        drivers[`${propertyName}$`] = driverCreator
         disposeMethods.add(dispose)
       })
   }
   
+  if (context.constructor.cycleCollections) {
+    // context.cycleCollectionsHandler$ = context.cycleCollectionsHandler$ || new Subject<ContextChanges>()
+    const collections = context.constructor.cycleCollections as Array<string>
+    
+    collections
+      // .map(propertyName => `${propertyName}$`)
+      .forEach(propertyName => {
+        // const originalPropertyName = propertyName
+        // propertyName = `${propertyName}$`
+        const triggerContextChange = (change: BindingChange<any>) => 
+          changes$.next({ property: propertyName, now: change.now, origin: change.origin, type: change.type })
+
+        // const aureliaObserver = observerLocator.getObserver(context, propertyName)
+        
+        if (!context[propertyName] || !(context[propertyName] instanceof Array))
+          context[propertyName] = []
+
+        const value = context[propertyName]
+        // const strategy = strategyLocator.getStrategy(value)
+        // const aureliaCollectionObserver = strategy.getCollectionObserver(observerLocator, value) //as ModifyCollectionObserver
+        // console.log('collection', value, strategy, aureliaCollectionObserver);
+        // let { driverCreator, dispose } = makeContextPropertyCollectionDriver(aureliaCollectionObserver, triggerContextChange)
+        let { driverCreator, dispose } = makeContextPropertyCollectionDriver(value, triggerContextChange)
+        // drivers[`${propertyName}$`] = makeContextPropertyCollectionDriver(value, triggerContextChange)
+        drivers[`${propertyName}$`] = driverCreator
+        disposeMethods.add(dispose)
+        // if (!strategy || strategy instanceof NullRepeatStrategy) {
+        // non-repeatable
+      })
+  }
+  
+  
+  if (context.constructor.cycleSignals) {
+    // context.cycleSignalsHandler$ = context.cycleSignalsHandler$ || new Subject<ContextChanges>()
+    const signals = context.constructor.cycleSignals as Array<string>
+    
+    signals
+      // .map(propertyName => `${propertyName}$`)
+      .forEach(propertyName => {
+        // const originalPropertyName = propertyName
+        // propertyName = `${propertyName}$`
+        const triggerContextChange = (change: BindingChange<any>) => 
+          changes$.next({ property: propertyName, now: change.now, origin: change.origin, type: change.type })
+
+        // const aureliaObserver = observerLocator.getObserver(context, propertyName)
+        const { driverCreator, dispose } = makeSignalDriver(context, propertyName, signaler, triggerContextChange)
+        drivers[`${propertyName}$`] = driverCreator
+        disposeMethods.add(dispose)
+      })
+  }
+  
+  // const observables = new Set<any>()
   // Object.keys(context)
   //   // .filter(propName => typeof context[propName].subscribe === 'function')
   //   .forEach(propName => {
@@ -246,36 +297,86 @@ export function makeBindingDrivers(context: any, observerLocator: ObserverLocato
   }
   return { //observables, 
     drivers, onBind: () => {
-      observables.forEach(observable => {
-        if (typeof observable._bind === 'function')
-          observable._bind()
-      })
+      // observables.forEach(observable => {
+      //   if (typeof observable._bind === 'function')
+      //     observable._bind()
+      // })
       onBind()
     }, onUnbind: () => {
-      observables.forEach(observable => {
-        if (typeof observable._bind === 'function')
-          observable._unbind()
-      })
+      // observables.forEach(observable => {
+      //   if (typeof observable._bind === 'function')
+      //     observable._unbind()
+      // })
+      onUnbind()
+    }, dispose: () => {
       disposeMethods.forEach(d => d())
+      dispose()
     }
   }
 }
 
-export function makeContextActionDriver(propertyName: string, contextActionsHandler: Subject<ContextChanges>, contextHandler: Subject<ContextChanges>) {
-  const driverCreator: DriverFunction = function aureliaDriver(triggers$: Observable<string>) {
-    triggers$.subscribe(args => {
-      const next = { property: propertyName, now: args, origin: ChangeOrigin.ViewModel, type: ChangeType.Action }
+export function makeContextActionDriver(context, propertyName: string, contextHandler: Subject<ContextChanges>) {
+  const contextActionsHandler: Subject<ContextChanges> = context.cycleActionsHandler$ = context.cycleActionsHandler$ || new Subject<ContextChanges>()
+  // const actionHandler = new Subject<Array<any>>()
+  
+  // ensures that each context will be handles with the proper propertyName 
+  
+  let trigger
+  
+  if (!context.__actionTriggers__)
+    context.__actionTriggers__ = {}
+  
+  if (context.__actionTriggers__[propertyName])
+    trigger = context.__actionTriggers__[propertyName]
+  else
+    trigger = context.__actionTriggers__[propertyName] = function trigger(args, origin) {
+      console.log('triggering', context.constructor.name, propertyName, context[propertyName].triggers.size)
+      const next = { property: propertyName, origin, now: args, type: ChangeType.Action }
+      
       contextActionsHandler.next(next)
+      // actionHandler.next(next.now)
       contextHandler.next(next)
+    }
+    
+  if (!context[propertyName]) {
+    context[propertyName] = function() {
+      const args = Array.from(arguments)
+      context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.View))
+    }
+    context[propertyName].triggers = new Set()
+    // context[propertyName].triggerPropertyMap = new Map<Subject<any>, string>()
+  }
+  
+  let subscription: Subscription
+  
+  const dispose = function() {
+    context[propertyName].triggers.delete(trigger)
+    console.log('disposed of trigger', context.constructor.name, propertyName, context[propertyName].triggers.size)
+    
+    if (subscription)
+      subscription.unsubscribe()
+  }
+  
+  const driverCreator: DriverFunction = function aureliaDriver(triggers$: Observable<string>) {
+    
+    context[propertyName].triggers.add(trigger)
+    console.log('added trigger', context.constructor.name, propertyName, context[propertyName].triggers.size)
+    
+    subscription = triggers$.subscribe(args => {
+      context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.ViewModel))
     })
 
+    // return actionHandler
+    //   .asObservable()
+      
     return contextActionsHandler
+      .asObservable()
       .filter(change => change.property === propertyName)
       // .filter(change => change !== undefined && change.origin === ChangeOrigin.View)
       .map(change => change.now)
   }
   driverCreator.streamAdapter = rxjsAdapter
-  return driverCreator
+  return { driverCreator, dispose }
 }
 
 export function makeContextSetterDriver(context, propertyName: string, triggerContextChange: ((change: BindingChange<any>) => void)) {
@@ -287,13 +388,54 @@ export function makeContextSetterDriver(context, propertyName: string, triggerCo
         triggerContextChange(next)
       }
     })
+    return Observable.empty()
   }
   
   driverCreator.streamAdapter = rxjsAdapter
   return driverCreator
 }
 
-export function makeContextPropertyDriver(aureliaObserver: InternalPropertyObserver, triggerContextChange: ((change: BindingChange<any>) => void)) {
+const signalInstanceCount = new Map<string, number>()
+function getSignalNameWithUniqueCount(name: string) {
+  let current = signalInstanceCount.get(name)
+  if (current !== undefined) {
+    current++
+  } else {
+    current = 0
+  }
+  signalInstanceCount.set(name, current)
+  return `${name}:${current}`
+}
+
+export function makeSignalDriver(context, propertyName: string, signaler: BindingSignaler, triggerContextChange: ((change: BindingChange<any>) => void)) {
+  const signalName = context[propertyName] || (context[propertyName] = getSignalNameWithUniqueCount(`${context.constructor.name}:${propertyName}`)) //Math.random().toString(36).slice(2)
+
+  let subscription: Subscription
+  
+  const driverCreator: DriverFunction = function aureliaDriver(value$: Observable<string>) {
+    subscription = value$.subscribe(newValueFromContext => {
+      signaler.signal(signalName)
+      console.log('signalling', signalName)
+      // if (newValueFromContext !== context[propertyName]) {
+      //   context[propertyName] = newValueFromContext
+      const next = { now: signalName, origin: ChangeOrigin.ViewModel, type: ChangeType.Signal }
+      triggerContextChange(next)
+      // }
+    })
+    return Observable.empty()
+  }
+  
+  driverCreator.streamAdapter = rxjsAdapter
+  return { driverCreator, dispose: function() { subscription.unsubscribe() } }
+}
+
+export function makeContextPropertyDriver(context, propertyName: string, observerLocator: ObserverLocator, triggerContextChange: ((change: BindingChange<any>) => void)) {
+  // const value = drivers[propertyName]
+  // const strategy = strategyLocator.getStrategy(value)
+  // if (!strategy || strategy instanceof NullRepeatStrategy) {
+  // non-repeatable
+  const aureliaObserver = observerLocator.getObserver(context, propertyName)
+  
   const observable = new BehaviorSubject<any>(aureliaObserver.getValue())
   
   const callable = (newValue, oldValue) => {
@@ -304,30 +446,41 @@ export function makeContextPropertyDriver(aureliaObserver: InternalPropertyObser
   
   aureliaObserver.subscribe(callable)
   
+  let subscription: Subscription
+  
+  function dispose() {
+    aureliaObserver.unsubscribe(callable)
+    subscription.unsubscribe()
+  }
+  
   const driverCreator: DriverFunction = function aureliaDriver(value$: Observable<string>) {
-    value$.subscribe(newValueFromContext => {
+    console.log('created context driver for', propertyName, value$)
+    subscription = value$.subscribe(newValueFromContext => {
+      // console.log('will change value', newValueFromContext)
       if (newValueFromContext !== aureliaObserver.getValue()) {
         aureliaObserver.setValue(newValueFromContext)
       }
     })
     
-    return observable
+    return observable.asObservable()    
   }
   
   driverCreator.streamAdapter = rxjsAdapter
-  return { driverCreator, dispose: () => aureliaObserver.unsubscribe(callable) }
+  return { driverCreator, dispose }
 }
 
-export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPropertyObserver & {items}, triggerContextChange: ((change: BindingChange<any>) => void)) {
+// export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPropertyObserver & {collection}, triggerContextChange: ((change: BindingChange<any>) => void)) {
+export function makeContextPropertyCollectionDriver(array: Array<any>, triggerContextChange: ((change: BindingChange<any>) => void)) {
   const allInternalChanges$ = new Subject<CollectionChanges<{}>>()
   const subscriptionMap = new WeakMap<any, Subscription>()
   const subscriptions = new Set<Subscription>()
   
+  let subscription: Subscription
+  
   const driverCreator: DriverFunction = function collectionDriver(collectionChanges$: Subject<CollectionChange<{}>>) {
-    // const array = new Array()
-    const array = aureliaObserver.items
+    // const array = aureliaObserver.collection
     
-    collectionChanges$.subscribe(collectionChange => {
+    subscription = collectionChanges$.subscribe(collectionChange => {
       // console.log('collection change', collectionChange)
       if (collectionChange.action == 'added') {
         if (array.indexOf(collectionChange.item) >= 0) return
@@ -354,7 +507,7 @@ export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPro
       }
       else {
         const index = array.indexOf(collectionChange.item)
-        if (array.indexOf(collectionChange.item) < 0) return
+        if (index < 0) return
         
         if (collectionChange.item instanceof Object) { 
           collectionChange.item['_postUnbindHook'] = () => {
@@ -367,7 +520,7 @@ export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPro
           }
         }
         
-        array.splice(array.indexOf(collectionChange.item), 1)
+        array.splice(index, 1)
       }
       
       allInternalChanges$.next({ 
@@ -378,7 +531,7 @@ export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPro
         type: collectionChange.action === 'added' ? ChangeType.Added : ChangeType.Removed 
       })
     })
-    return allInternalChanges$
+    return allInternalChanges$.asObservable()
     
     /**
      * mass trigger - always trigger callables of a certain name
@@ -388,7 +541,11 @@ export function makeContextPropertyCollectionDriver(aureliaObserver: InternalPro
      */
   }
   driverCreator.streamAdapter = rxjsAdapter
-  return { driverCreator, dispose: () => subscriptions.forEach(subscription => subscription.unsubscribe()) }
+  // return driverCreator
+  return { driverCreator, dispose: () => {
+    subscription.unsubscribe()
+    subscriptions.forEach(subscription => subscription.unsubscribe())
+  } }
 }
 
 export function makeTwoWayBindingDriver(bindingObservable: BehaviorSubject<any> & { _now?: any }) {
@@ -404,6 +561,7 @@ export function makeTwoWayBindingDriver(bindingObservable: BehaviorSubject<any> 
     })
 
     return bindingObservable
+      .asObservable()
       .filter(change => change !== undefined)
       // .filter(change => change !== undefined && change.origin === ChangeOrigin.View)
       .map(change => change.now)
@@ -424,6 +582,7 @@ export function makeActionBindingDriver(bindingObservable: Subject<any>) {
     })
 
     return bindingObservable
+      .asObservable()
       .filter(change => change !== undefined)
       // .filter(change => change !== undefined && change.origin === ChangeOrigin.View)
       .map(change => change.now)
@@ -517,7 +676,7 @@ export function makeCollectionBindingDriver(collectionObservable: Observable<Col
         type: collectionChange.action === 'added' ? ChangeType.Added : ChangeType.Removed 
       })
     })
-    return allInternalChanges$
+    return allInternalChanges$.asObservable()
     
     /**
      * mass trigger - always trigger callables of a certain name
@@ -558,7 +717,6 @@ export function enhanceSubjectWithAureliaAction(subject) {//: Subject<Array<any>
   
   subject['_bindingType'] = BindingType.Action
 }
-*/
 export function value<T>(initialValue?: T) {
   const next = { now: initialValue, origin: ChangeOrigin.View, type: ChangeType.Value }
   let subject: any = initialValue === undefined ? new ReplaySubject<any>(1) : new BehaviorSubject<any>(next)
@@ -579,7 +737,7 @@ export function value<T>(initialValue?: T) {
   // we're cheating a bit with types
   return subject as CycleValue<T>
 }
-
+*/
 function enhanceSubjectWithAureliaValue<T>(subject: BehaviorSubject<ValueAndOrigin<T>>, initialValue?: T) {
   if (subject['_bindingType'] !== undefined) return
 
@@ -640,7 +798,7 @@ function enhanceSubjectWithAureliaValue<T>(subject: BehaviorSubject<ValueAndOrig
     
   subject['_bindingType'] = BindingType.Value
 }
-
+/*
 export function collection<T>() {
   const subject = new Subject() as Collection<T>
   subject.now = new Array()
@@ -654,7 +812,7 @@ export function collection<T>() {
   }
   return subject
 }
-
+*/
 /**
  * dummy value converter that allows to synchronize
  * retriggering of a binding to changes of other values
@@ -693,6 +851,22 @@ export function oneWay(definition, propertyName) {
   // console.log('action decorator', definition, propertyName)
 }
 
+export function collection(definition, propertyName) {
+  if (!definition.constructor.cycleCollections) {
+    definition.constructor.cycleCollections = [propertyName]
+  } else {
+    definition.constructor.cycleCollections.push(propertyName)
+  }
+}
+
+export function signal(definition, propertyName) {
+  if (!definition.constructor.cycleSignals) {
+    definition.constructor.cycleSignals = [propertyName]
+  } else {
+    definition.constructor.cycleSignals.push(propertyName)
+  }
+}
+
 export function configure(frameworkConfig: FrameworkConfiguration) {
   const viewResources = frameworkConfig.aurelia.resources
   const valueConverterInstance = frameworkConfig.container.get(TriggerValueConverter)
@@ -700,44 +874,187 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
   
   const strategyLocator = frameworkConfig.container.get(RepeatStrategyLocator) as RepeatStrategyLocator
   const observerLocator = frameworkConfig.container.get(ObserverLocator) as ObserverLocator
+  const signaler = frameworkConfig.container.get(BindingSignaler) as BindingSignaler
+  /*
+  const originalUnbind = Controller.prototype.unbind
+  Controller.prototype.unbind = function unbind() {
+    const wasBound = this.isBound
+    originalUnbind.apply(this, arguments)
+    
+    if (wasBound) {
+      
+    }
+    const context = this.viewModel
+    
+    if (!context || typeof context.cycle !== 'function') return
+    console.log('after unbind', context._cycleCount)
+    
+    context._cycleCount = context._cycleCount - 1
+    
+    context._cycleOnUnbind()
+    context._cycleDispose()
+    context._cycleOnUnbind = undefined
+    context._cycleDispose = undefined
+  }
   
-  const hooks = {
-    beforeBind: function (view: View & {bindingContext}) {
-      const context = view.bindingContext
-      if (!context || typeof context.cycle !== 'function') return
-      // console.log('before bind', view)
+  
+  const originalBind = Controller.prototype.bind
+  Controller.prototype.bind = function bind(scope): void {
+    const context = this.viewModel
+    
+    originalBind.apply(this, arguments)
+    
+    if (!context || typeof context.cycle !== 'function') return
+    
+    // if (viewModelScope !== null) {
+    
+    let count = context._cycleCount = (context._cycleCount || 0) + 1
+    
+    
+    console.log('after bind', this, count)      
+    
+    if (context._cycleCount > 1) { // || view.__awesome > 1
+      // console.log('wtf!', view._cycleCount)
+      return
+    }
+    
+    let sources
+    // let cyclePrepared = context._cyclePrepared
+    // if (!context._cyclePrepared) {
+      //context._cyclePrepared = 
       
-      // TODO add count
-      
-      const sources = context.cycleDrivers || {}
-      const { drivers, onBind, onUnbind } = makeBindingDrivers(context, observerLocator, strategyLocator)
-      
-      // bind all observables
-      // Object.getOwnPropertyNames(observables)
-      //   .forEach(propName => {
-      //     if (typeof observables[propName]._bind === 'function')
-      //       observables[propName]._bind()
-      //   })
-      
-      // context._cycleContextObservables = observables
-      onBind()
+      sources = context.cycleDrivers || {}
+      const { drivers, onBind, onUnbind, dispose } = makeBindingDrivers(context, observerLocator, strategyLocator)
       
       Object.assign(sources, drivers)
       
-      const disposeFunction = Cycle.run(context.cycle.bind(context), sources)
+      onBind()
       
-      context._cycleDispose = () => {
-        disposeFunction()
-        onUnbind()
+      context._cycleOnUnbind = onUnbind
+      // if (context._cycleOnUnbind)
+      //   context._cycleOnUnbind.push(onUnbind)
+      // else
+      //   context._cycleOnUnbind = [onUnbind]
+    // } else {
+    //   sources = cyclePrepared.drivers
+    //   cyclePrepared.onBind()
+    // }
+    
+    const disposeFunction = Cycle.run(context.cycle.bind(context), sources)
+    
+    const _cycleDispose = () => {
+      // cyclePrepared.
+      dispose()
+      disposeFunction()
+    }
+    
+    context._cycleDispose = _cycleDispose
+    // if (context._cycleDispose)
+    //   context._cycleDispose.push(_cycleDispose)
+    // else
+    //   context._cycleDispose = [_cycleDispose]
+    
+    // if (typeof context._onBindHook === 'function')
+    //   context._onBindHook()
+    // }
+  }
+  */
+  const hooks = {
+    beforeBind: function (view: View & {bindingContext; controller: Controller}) {
+      // const context = view.bindingContext
+      // view.__awesome = (view.__awesome || 0) + 1
+      
+      if (view.controller !== null) {
+        const context = view.controller.viewModel as any
+        
+        if (!context || typeof context.cycle !== 'function') return
+        const count = context._cycleCount = (context._cycleCount || 0) + 1   
+        // console.log('awesome bind', count)
+    
+        if (context._cycleCount > 1) {
+          // console.log('COUNT IS SHIT', count)          
+          return
+        }
+    
+        const preparedSources = context.cycleDrivers || {}
+        const { drivers, onBind, onUnbind, dispose } = makeBindingDrivers(context, observerLocator, strategyLocator, signaler)
+        
+        Object.assign(preparedSources, drivers)
+        
+        onBind()
+        
+        context._cycleOnUnbind = onUnbind
+        
+        const {run, sources, sinks} = Cycle(context.cycle.bind(context), preparedSources)
+        const disposeFunction = run()
+        
+        // console.log('cycling: sources / sinks', sources, sinks)
+        // const disposeFunction = Cycle.run(context.cycle.bind(context), sources)
+    
+        const _cycleDispose = () => {
+          dispose()
+          disposeFunction()
+        }
+    
+        context._cycleDispose = _cycleDispose
       }
       
-      // if (typeof context._onBindHook === 'function')
-      //   context._onBindHook()
     },
-    beforeUnbind: function (view: View & {bindingContext}) {
-      const context = view.bindingContext
-      if (!context || typeof context._cycleDispose !== 'function') return
-      context._cycleDispose()
+    beforeUnbind: function (view: View & {bindingContext; controller: Controller}) {
+      // const context = this.viewModel
+      if (view.controller !== null) {
+        const context = view.controller.viewModel as any
+        
+        if (!context || typeof context.cycle !== 'function') return
+        // console.log('awesome unbind', context._cycleCount)
+        
+        context._cycleCount = context._cycleCount - 1
+        
+        context._cycleOnUnbind()
+        context._cycleDispose()
+        context._cycleOnUnbind = undefined
+        context._cycleDispose = undefined
+      }
+      
+      // const context = view.bindingContext
+      // if (!context || typeof context.cycle !== 'function') return
+      // console.log('before unbind', context._cycleCount)
+      
+      // context._cycleCount = context._cycleCount - 1
+      
+      // context._cycleOnUnbind()
+      // context._cycleDispose()
+      // context._cycleOnUnbind = undefined
+      // context._cycleDispose = undefined
+      // console.log('before unbind', view, context._cycleCount)
+
+      
+      // context._cycleOnUnbind()
+      
+      // if (context._cycleCount === 0) {
+      //   context._cycleDispose()
+      //   context._cycleOnUnbind = undefined
+      //   context._cycleDispose = undefined
+      // let unbind = (context._cycleOnUnbind as Array<Function>).shift()
+      // unbind()
+      
+      // let dispose = (context._cycleDispose as Array<Function>).shift()
+      // dispose()
+      // }
+      
+      // if (context._cycleCount !== undefined)
+      
+      // if (context._cycleOnUnbind !== undefined)
+      
+      
+      // setTimeout(() => {
+      //   // if still not rebind after 1 sec, dispose
+      //   if (context._cycleCount > 0) return
+        
+      //   context._cycleDispose()
+      //   context._cycleDispose = undefined
+      //   context._cycleOnUnbind = undefined
+      // }, 1000)
       
       // if (!context || typeof context.cycle !== 'function') return
       

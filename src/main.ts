@@ -10,6 +10,6 @@ bootstrap((aurelia: Aurelia): void => {
 
   aurelia.use.plugin('cycle/plugin');
 
-  // aurelia.start().then(() => aurelia.setRoot('cycle-todomvc/todos', document.body));
-  aurelia.start().then(() => aurelia.setRoot('app', document.body));
+  aurelia.start().then(() => aurelia.setRoot('cycle-todomvc/todos', document.body));
+  // aurelia.start().then(() => aurelia.setRoot('app', document.body));
 });

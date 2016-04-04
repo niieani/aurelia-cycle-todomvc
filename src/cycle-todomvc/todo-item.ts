@@ -1,6 +1,6 @@
 import {Observable} from 'rxjs/Rx'
 import {bindable, useView} from 'aurelia-framework'
-import {action as a, value as v, CycleValue} from '../cycle/plugin'
+import {action, oneWay, twoWay, collection, CycleSourcesAndSinks} from '../cycle/plugin'
 
 const ENTER_KEY = 13
 const ESC_KEY = 27
@@ -11,24 +11,42 @@ export class TodoItem {
   // cycleDrivers = { }
   
   constructor(
-    title: string, completed: boolean, 
-    public destroy$: Observable<any>, 
-    public toggle$: Observable<any>, 
-    public clearIfCompleted$: Observable<any>
+    title: string,
+    completed: boolean, 
+    destroy, 
+    toggle, 
+    clearIfCompleted
   ) {
-    this.title$ = v(title)
-    this.isCompleted$ = v(completed)
+    this.title = title
+    this.isCompleted = completed
+    // external actions
+    this.destroy = destroy
+    this.toggle = toggle
+    this.clearIfCompleted = clearIfCompleted
   }
   
-  title$: CycleValue<string>;
-  isCompleted$: CycleValue<boolean>;
-  isEditing$ = v<boolean>()
+  @twoWay title;
+  @twoWay isCompleted;
+  @oneWay isEditing;
   
-  startEdit$ = a()
-  keyUp$ = a()
-  doneEdit$ = a() as Observable<any>
+  // internal actions
+  @action startEdit;
+  @action keyUp;
+  @action doneEdit;
   
-  cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: this) {
+  // external actions
+  @action destroy;
+  @action toggle;
+  @action clearIfCompleted;
+  
+  // bind(a, b) {
+  //   console.log('gówno2 bind', b)
+  // }
+  // unbind(a, b) {
+  //   console.log('gówno2 unbind', b)
+  // }
+  
+  cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
     const cancelEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ESC_KEY)
 
@@ -61,8 +79,24 @@ export class TodoItem {
       .map(title => [this])
       .merge(clearCommand)
     
-    const toggledIsCompleted$ = toggle$.
-      withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
+    const toggledIsCompleted$ = toggle$
+      .withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
+      
+    // toggle$.subscribe(next => console.log('toggling on'))
+    // clearIfCompleted$.subscribe(next => {
+    //   console.log('clear?');
+    //   return;
+    // })
+    
+    // isCompleted$.subscribe(next => {
+    //   console.log('isCompleted', next);
+    //   return;
+    // })
+    
+    toggledIsCompleted$.subscribe(next => {
+      console.log('toggle isCompleted', next);
+      return;
+    })
       // withLatestFrom(isCompleted$, (toggle, isCompleted) => !isCompleted)
     
     return {

@@ -1,10 +1,10 @@
-import {action, oneWay, twoWay, collection} from '../cycle/plugin'
+import {action, oneWay, twoWay, collection, CycleContext, CycleSourcesAndSinks} from '../cycle/plugin'
 import {autoinject, ObserverLocator} from 'aurelia-framework'
 import {RepeatStrategyLocator} from 'aurelia-templating-resources'
 import {Observable} from 'rxjs/Rx'
 
 @autoinject
-export class Counter {
+export class Counter implements CycleContext {
   // cycleDrivers = { extra drivers go here }
   // count = value()
   // tasks = array()
@@ -62,7 +62,13 @@ export class Counter {
   // count$ = value()
   @oneWay count; //$: Observable<string>;
   
-  cycle({ change$, input$ }: { [s: string]: Observable<any> }) {
+  @collection arr = ['huh'];
+  
+  // bind() {
+  //   setTimeout(()=>this.arr = ['lolz'], 3000)
+  // }
+  
+  cycle({ change$, input$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
     const changeValue$ = change$
       .map(args => args[0])
 
@@ -73,9 +79,12 @@ export class Counter {
 
     input$.subscribe(next => console.log('change', next))
 
+    const arr$ = count$.map(v => ({ action: 'added', item: v }))
+
     return {
       count$,
-      input$: count$
+      input$: count$,
+      arr$
     }
   }
 }
