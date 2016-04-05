@@ -39,16 +39,7 @@ export class TodoItem {
   @action toggle;
   @action clearIfCompleted;
   
-  // bind(a, b) {
-  //   console.log('gówno2 bind', b)
-  // }
-  // unbind(a, b) {
-  //   console.log('gówno2 unbind', b)
-  // }
-  
   cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
-    console.log('todo item sources', arguments[0])
-    
     const cancelEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ESC_KEY)
 
@@ -70,9 +61,11 @@ export class TodoItem {
       .distinctUntilChanged()
     
     const clearCommand$ = clearIfCompleted$.withLatestFrom(
-      isCompleted$.filter(completed => completed === true), 
-      (action, completed) => [this]
-    )
+        isCompleted$,
+        (action, completed) => completed
+      )
+      .filter(completed => completed === true)
+      .map(action => [this])
     
     // Destroy when somebody gives a todo an empty name
     const destroy$ = doneEdit$
@@ -83,22 +76,6 @@ export class TodoItem {
     
     const toggledIsCompleted$ = toggle$
       .withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
-      
-    // toggle$.subscribe(next => console.log('toggling on'))
-    clearIfCompleted$.subscribe(next => {
-      console.log('clear when completed');
-    })
-    
-    // isCompleted$.subscribe(next => {
-    //   console.log('isCompleted', next);
-    //   return;
-    // })
-    
-    toggledIsCompleted$.subscribe(next => {
-      console.log('toggle isCompleted', next);
-      return;
-    })
-      // withLatestFrom(isCompleted$, (toggle, isCompleted) => !isCompleted)
     
     return {
       isEditing$,

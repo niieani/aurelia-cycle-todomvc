@@ -3,7 +3,6 @@ import 'todomvc-app-css/index.css'
 
 import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
 import {action, oneWay, twoWay, signal, collection, CycleSourcesAndSinks, ChangeOrigin, CycleContext, ContextChanges, ChangeType} from '../cycle/plugin'
-// import {action as a, value as v, collection, ChangeOrigin, CycleContext, ContextChanges, ChangeType} from '../cycle/plugin'
 import {computedFrom} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
 
@@ -14,8 +13,8 @@ export class Todos { // implements CycleDriverContext
   @action destroyTodo
   @twoWay newTodoTitle
   
-  @signal completions // TODO: this should be a trigger
-  @signal completionsCreationsDestructions // TODO: like above
+  @signal completions
+  @signal completionsCreationsDestructions
   
   @collection todos // = new Array<TodoItem>()
   @action filter
@@ -25,8 +24,6 @@ export class Todos { // implements CycleDriverContext
   @action clearCompleted
   
   cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
-    console.log(arguments[0], this.toggleAll)
-    
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
       newTodoTitle$, 
       (action, title) => title as string
@@ -65,7 +62,7 @@ export class Todos { // implements CycleDriverContext
       todos$.filter(change => change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
     )
     
-    // todos$.subscribe(next => console.log('next', next))
+    todos$.subscribe(next => console.log('next', next))
 
     return {
       todos$: todoChanges$,
