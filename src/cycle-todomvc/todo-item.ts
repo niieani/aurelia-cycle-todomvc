@@ -47,6 +47,8 @@ export class TodoItem {
   // }
   
   cycle({ startEdit$, keyUp$, doneEdit$, title$, toggle$, isCompleted$, clearIfCompleted$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
+    console.log('todo item sources', arguments[0])
+    
     const cancelEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ESC_KEY)
 
@@ -67,7 +69,7 @@ export class TodoItem {
       .startWith(false)
       .distinctUntilChanged()
     
-    const clearCommand = clearIfCompleted$.withLatestFrom(
+    const clearCommand$ = clearIfCompleted$.withLatestFrom(
       isCompleted$.filter(completed => completed === true), 
       (action, completed) => [this]
     )
@@ -77,16 +79,15 @@ export class TodoItem {
       .withLatestFrom(title$, (action, title) => title)
       .filter(value => value === '')
       .map(title => [this])
-      .merge(clearCommand)
+      .merge(clearCommand$)
     
     const toggledIsCompleted$ = toggle$
       .withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
       
     // toggle$.subscribe(next => console.log('toggling on'))
-    // clearIfCompleted$.subscribe(next => {
-    //   console.log('clear?');
-    //   return;
-    // })
+    clearIfCompleted$.subscribe(next => {
+      console.log('clear when completed');
+    })
     
     // isCompleted$.subscribe(next => {
     //   console.log('isCompleted', next);

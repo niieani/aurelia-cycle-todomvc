@@ -3,8 +3,8 @@
   "version": false,
   "dependencies": {
     "@cycle/base": "npm:@cycle/base",
-    "@cycle/core": "npm:@cycle/core/lib/index.d.ts",
     "@cycle/rxjs-adapter": "npm:@cycle/rxjs-adapter",
+    "@cycle/rxjs-run": "npm:@cycle/rxjs-run",
     "rxjs": "npm:rxjs"
   },
   "ambientDependencies": {
@@ -21,8 +21,8 @@
     "aurelia-logging": "npm:aurelia-logging/dist/commonjs/aurelia-logging.d.ts",
     "aurelia-logging-console": "npm:aurelia-logging-console/dist/commonjs/aurelia-logging-console.d.ts",
     "aurelia-metadata": "npm:aurelia-metadata/dist/commonjs/aurelia-metadata.d.ts",
-    "aurelia-pal-browser": "npm:aurelia-pal-browser/dist/commonjs/aurelia-pal-browser.d.ts",
     "aurelia-pal": "npm:aurelia-pal/dist/commonjs/aurelia-pal.d.ts",
+    "aurelia-pal-browser": "npm:aurelia-pal-browser/dist/commonjs/aurelia-pal-browser.d.ts",
     "aurelia-path": "npm:aurelia-path/dist/commonjs/aurelia-path.d.ts",
     "aurelia-polyfills": "npm:aurelia-polyfills/dist/commonjs/aurelia-polyfills.d.ts",
     "aurelia-route-recognizer": "npm:aurelia-route-recognizer/dist/commonjs/aurelia-route-recognizer.d.ts",

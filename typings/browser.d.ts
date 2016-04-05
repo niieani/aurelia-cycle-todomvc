@@ -24,6 +24,6 @@
 /// <reference path="browser/ambient/aurelia-templating/index.d.ts" />
 /// <reference path="browser/ambient/core-js/index.d.ts" />
 /// <reference path="browser/definitions/@cycle/base/index.d.ts" />
-/// <reference path="browser/definitions/@cycle/core/index.d.ts" />
 /// <reference path="browser/definitions/@cycle/rxjs-adapter/index.d.ts" />
+/// <reference path="browser/definitions/@cycle/rxjs-run/index.d.ts" />
 /// <reference path="browser/definitions/rxjs/index.d.ts" />

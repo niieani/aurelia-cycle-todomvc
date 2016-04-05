@@ -1,6 +1,8 @@
 import {Observable, Observer, Subscription, BehaviorSubject, ReplaySubject, Subject, Subscriber} from 'rxjs/Rx'
 
-import Cycle from './core' // '@cycle/core' // /lib/index
+// import Cycle from './core' // '@cycle/core' // /lib/index
+// import rxjsAdapter from '@cycle/rxjs-adapter' // /lib/index
+import Cycle from '@cycle/rxjs-run' // /lib/index
 import rxjsAdapter from '@cycle/rxjs-adapter' // /lib/index
 import { DriverFunction } from '@cycle/base'
 import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom, autoinject} from 'aurelia-framework';
@@ -119,9 +121,10 @@ export function makeBindingDrivers(context: any, observerLocator: ObserverLocato
   }).bind(context)
   
   const dispose = (function() {
-    console.log('disposing')
-    if (typeof this._postUnbindHook === 'function')
-      this._postUnbindHook()
+    // console.log('disposing')
+    if (this._postUnbindHooks)
+      this._postUnbindHooks.forEach(hook => hook())
+    this._postUnbindHooks = undefined
   }).bind(context)
   
   const disposeMethods = new Set<Function>()
@@ -316,11 +319,12 @@ export function makeBindingDrivers(context: any, observerLocator: ObserverLocato
 }
 
 export function makeContextActionDriver(context, propertyName: string, contextHandler: Subject<ContextChanges>) {
-  const contextActionsHandler: Subject<ContextChanges> = context.cycleActionsHandler$ = context.cycleActionsHandler$ || new Subject<ContextChanges>()
+  // const contextActionsHandler: Subject<ContextChanges> = context.cycleActionsHandler$ = context.cycleActionsHandler$ || new Subject<ContextChanges>()
   // const actionHandler = new Subject<Array<any>>()
+  const actionHandler = new Subject<ContextChanges>()
   
   // ensures that each context will be handles with the proper propertyName 
-  
+  /*
   let trigger
   
   if (!context.__actionTriggers__)
@@ -338,41 +342,65 @@ export function makeContextActionDriver(context, propertyName: string, contextHa
       contextHandler.next(next)
     }
     
+  */
+  
+  let triggerPropertyMap: Map<Subject<any>, string>
+  
   if (!context[propertyName]) {
     context[propertyName] = function() {
       const args = Array.from(arguments)
-      context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.View))
+      triggerPropertyMap.forEach((propertyName: string, handler: Subject<any>) => {
+        handler.next({ property: propertyName, origin: ChangeOrigin.View, now: args, type: ChangeType.Action })
+      })
+      // context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.View))
     }
-    context[propertyName].triggers = new Set()
-    // context[propertyName].triggerPropertyMap = new Map<Subject<any>, string>()
+    // context[propertyName].triggers = new Set()
+    triggerPropertyMap = context[propertyName].triggerPropertyMap = new Map<Subject<any>, string>()
+  } else {
+    triggerPropertyMap = context[propertyName].triggerPropertyMap
   }
   
   let subscription: Subscription
   
   const dispose = function() {
-    context[propertyName].triggers.delete(trigger)
-    console.log('disposed of trigger', context.constructor.name, propertyName, context[propertyName].triggers.size)
+    // context[propertyName].triggers.delete(trigger)
+    // triggerPropertyMap.delete(contextHandler)
+    triggerPropertyMap.delete(actionHandler)
+    // triggerPropertyMap.delete(contextActionsHandler)
+    // console.log('disposed of trigger', context.constructor.name, propertyName, triggerPropertyMap.size)
     
     if (subscription)
       subscription.unsubscribe()
   }
-  
+  let count = 0
   const driverCreator: DriverFunction = function aureliaDriver(triggers$: Observable<string>) {
-    
-    context[propertyName].triggers.add(trigger)
-    console.log('added trigger', context.constructor.name, propertyName, context[propertyName].triggers.size)
+    count++
+    // context[propertyName].triggers.add(trigger)
+    triggerPropertyMap.set(actionHandler, propertyName)
+    // triggerPropertyMap.set(contextHandler, propertyName)
+    // triggerPropertyMap.set(contextActionsHandler, propertyName)
+    // console.log('added trigger', context.constructor.name, propertyName, context[propertyName].triggerPropertyMap.size)
     
     subscription = triggers$.subscribe(args => {
-      context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.ViewModel))
+      // context[propertyName].triggers.forEach(trigger => trigger(args, ChangeOrigin.ViewModel))
+      triggerPropertyMap.forEach((propertyName: string, handler: Subject<any>) => {
+        handler.next({ property: propertyName, origin: ChangeOrigin.ViewModel, now: args, type: ChangeType.Action })
+      })
     })
 
     // return actionHandler
     //   .asObservable()
       
-    return contextActionsHandler
+    // return contextActionsHandler
+    // return contextHandler
+    return actionHandler
       .asObservable()
-      .filter(change => change.property === propertyName)
+      .filter(change => change.property === propertyName && change.type === ChangeType.Action)
       // .filter(change => change !== undefined && change.origin === ChangeOrigin.View)
+      .do(next => {
+        contextHandler.next(next)
+        // console.log(`context handler:${count}`, propertyName, next)
+      })
       .map(change => change.now)
   }
   driverCreator.streamAdapter = rxjsAdapter
@@ -380,8 +408,13 @@ export function makeContextActionDriver(context, propertyName: string, contextHa
 }
 
 export function makeContextSetterDriver(context, propertyName: string, triggerContextChange: ((change: BindingChange<any>) => void)) {
+  let subscription: Subscription
+  const dispose = function() {
+    if (subscription)
+      subscription.unsubscribe()
+  }
   const driverCreator: DriverFunction = function aureliaDriver(value$: Observable<string>) {
-    value$.subscribe(newValueFromContext => {
+    subscription = value$.subscribe(newValueFromContext => {
       if (newValueFromContext !== context[propertyName]) {
         context[propertyName] = newValueFromContext
         const next = { now: newValueFromContext, origin: ChangeOrigin.ViewModel, type: ChangeType.Value }
@@ -509,15 +542,17 @@ export function makeContextPropertyCollectionDriver(array: Array<any>, triggerCo
         const index = array.indexOf(collectionChange.item)
         if (index < 0) return
         
-        if (collectionChange.item instanceof Object) { 
-          collectionChange.item['_postUnbindHook'] = () => {
-            // console.log('unsubscribing post-unbind')
+        if (collectionChange.item instanceof Object) {
+          function _postUnbindHook() {
+            console.log('unsubscribing post-unbind')
             const subscription = subscriptionMap.get(collectionChange.item)
             if (subscription) {
               subscription.unsubscribe()
               subscriptions.delete(subscription)
             }
           }
+          collectionChange.item['_postUnbindHooks'] = collectionChange.item['_postUnbindHooks'] || []
+          collectionChange.item['_postUnbindHooks'].push(_postUnbindHook)
         }
         
         array.splice(index, 1)
@@ -654,15 +689,17 @@ export function makeCollectionBindingDriver(collectionObservable: Observable<Col
         const index = array.indexOf(collectionChange.item)
         if (array.indexOf(collectionChange.item) < 0) return
         
-        if (collectionChange.item instanceof Object) { 
-          collectionChange.item['_postUnbindHook'] = () => {
-            // console.log('unsubscribing post-unbind')
+        if (collectionChange.item instanceof Object) {
+          function _postUnbindHook() {
+            console.log('unsubscribing post-unbind')
             const subscription = subscriptionMap.get(collectionChange.item)
             if (subscription) {
               subscription.unsubscribe()
               subscriptions.delete(subscription)
             }
           }
+          collectionChange.item['_postUnbindHooks'] = collectionChange.item['_postUnbindHooks'] || []
+          collectionChange.item['_postUnbindHooks'].push(_postUnbindHook)
         }
         
         array.splice(array.indexOf(collectionChange.item), 1)
@@ -1005,13 +1042,14 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
       if (view.controller !== null) {
         const context = view.controller.viewModel as any
         
-        if (!context || typeof context.cycle !== 'function') return
-        // console.log('awesome unbind', context._cycleCount)
+        // if (!context || typeof context.cycle !== 'function') return
+        if (!context || typeof context._cycleDispose !== 'function') return
+        console.log('awesome unbind', context._cycleCount)
         
         context._cycleCount = context._cycleCount - 1
         
-        context._cycleOnUnbind()
         context._cycleDispose()
+        context._cycleOnUnbind()
         context._cycleOnUnbind = undefined
         context._cycleDispose = undefined
       }

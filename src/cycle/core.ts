@@ -2,9 +2,9 @@ import {
   DriversDefinition,
   CycleExecution,
   DisposeFunction
-} from '@cycle/base';
-import CycleBase from '@cycle/base';
-import RxJSAdapter from '@cycle/rxjs-adapter';
+} from './base';
+import CycleBase from './base';
+import RxJSAdapter from './rxjs-adapter';
 
 export interface CycleSetup {
   (main: (sources: any) => any, drivers: DriversDefinition): CycleExecution<any, any>;
