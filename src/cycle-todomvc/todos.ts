@@ -14,7 +14,7 @@ export class Todos { // implements CycleDriverContext
   @twoWay newTodoTitle
   
   @signal completions
-  @signal completionsCreationsDestructions
+  @signal creationsAndDestructions
   
   @collection todos // = new Array<TodoItem>()
   @action filter
@@ -23,7 +23,7 @@ export class Todos { // implements CycleDriverContext
   @action toggleAll
   @action clearCompleted
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, clearCompleted$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
       newTodoTitle$, 
       (action, title) => title as string
@@ -31,7 +31,7 @@ export class Todos { // implements CycleDriverContext
     
     const newTodo$ = newTodoProspective$
       .filter(title => title != '')
-      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll, this.clearCompleted) }))
+      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll) })) //, this.clearCompleted
     
     // every time a new todo is created, reset title
     newTodoTitle$ = newTodoTitle$
@@ -40,14 +40,14 @@ export class Todos { // implements CycleDriverContext
     const removedTodo$ = destroyTodo$
       .map(args => ({ action: 'remove', item: args[0] }))
     
+    clearCompleted$ = clearCompleted$.map(() => ({
+      action: 'do',
+      where: (item: TodoItem) => item.isCompleted,
+      do: (item: TodoItem) => this.destroyTodo(item)
+    }))
+    
     const todoChanges$ = Observable
-      .merge<any, any>(newTodo$, removedTodo$)
-      // .startWith(
-      //   { action: 'added', item: new TodoItem('incomplete', false, this.destroyTodo, this.toggleAll, this.clearCompleted) },
-      //   { action: 'added', item: new TodoItem('completed', true, this.destroyTodo, this.toggleAll, this.clearCompleted) }
-      // )
-    // { action: 'do', where: (item) => item.isCompleted, do: (item) => item.destroy() }
-    // { action: 'do', where: (item) => item.isCompleted, do: (item) => this.destroyTodo(item) }
+      .merge(newTodo$, removedTodo$, clearCompleted$)
     
     const currentFilter$ = filter$
       .map(args => args[0])
@@ -60,9 +60,8 @@ export class Todos { // implements CycleDriverContext
       .filter(change => change.property === 'isCompleted')
 
     // Trigger when we create and destroy any Todos to update the X left count
-    const completionsCreationsDestructions$ = completions$.merge(
+    const creationsAndDestructions$ = 
       todos$.filter(change => change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
-    )
     
     // todos$.subscribe(next => console.log('next', next))
 
@@ -71,7 +70,7 @@ export class Todos { // implements CycleDriverContext
       newTodoTitle$,
       currentFilter$,
       completions$,
-      completionsCreationsDestructions$
+      creationsAndDestructions$
     }
   }
 }

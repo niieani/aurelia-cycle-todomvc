@@ -1,7 +1,7 @@
 import {View} from 'aurelia-templating'
 import {Observable, Observer, Subscription, BehaviorSubject, ReplaySubject, Subject, Subscriber} from 'rxjs/Rx'
 
-import Cycle from './core' // '@cycle/core' // /lib/index
+import Cycle from '@cycle/rxjs-run' // /lib/index
 import rxjsAdapter from '@cycle/rxjs-adapter' // /lib/index
 import { DriverFunction } from '@cycle/base'
 import {LogManager, FrameworkConfiguration, declarePropertyDependencies, computedFrom, autoinject} from 'aurelia-framework';
