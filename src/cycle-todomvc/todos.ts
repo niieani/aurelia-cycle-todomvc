@@ -31,14 +31,14 @@ export class Todos { // implements CycleDriverContext
     
     const newTodo$ = newTodoProspective$
       .filter(title => title != '')
-      .map(title => ({ action: 'added', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll, this.clearCompleted) }))
+      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll, this.clearCompleted) }))
     
     // every time a new todo is created, reset title
     newTodoTitle$ = newTodoTitle$
       .merge(newTodo$.map(todo => ''))
 
     const removedTodo$ = destroyTodo$
-      .map(args => ({ action: 'removed', item: args[0] }))
+      .map(args => ({ action: 'remove', item: args[0] }))
     
     const todoChanges$ = Observable
       .merge<any, any>(newTodo$, removedTodo$)
@@ -46,6 +46,8 @@ export class Todos { // implements CycleDriverContext
       //   { action: 'added', item: new TodoItem('incomplete', false, this.destroyTodo, this.toggleAll, this.clearCompleted) },
       //   { action: 'added', item: new TodoItem('completed', true, this.destroyTodo, this.toggleAll, this.clearCompleted) }
       // )
+    // { action: 'do', where: (item) => item.isCompleted, do: (item) => item.destroy() }
+    // { action: 'do', where: (item) => item.isCompleted, do: (item) => this.destroyTodo(item) }
     
     const currentFilter$ = filter$
       .map(args => args[0])
@@ -62,7 +64,7 @@ export class Todos { // implements CycleDriverContext
       todos$.filter(change => change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
     )
     
-    todos$.subscribe(next => console.log('next', next))
+    // todos$.subscribe(next => console.log('next', next))
 
     return {
       todos$: todoChanges$,
@@ -91,9 +93,20 @@ export class FilterTodoValueConverter {
 
 export class CountIncompleteValueConverter {
   toView(todos: Array<TodoItem>) {
-    // console.log('counting incomplete', todos)
-    
     const count = todos ? todos.filter(todo => !todo.isCompleted).length : 0
     return count
+  }
+}
+
+export class CountCompleteValueConverter {
+  toView(todos: Array<TodoItem>) {
+    const count = todos ? todos.filter(todo => todo.isCompleted).length : 0
+    return count
+  }
+}
+
+export class AnyValueConverter {
+  toView(count: number) {
+    return count > 0
   }
 }

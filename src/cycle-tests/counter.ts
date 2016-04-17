@@ -75,7 +75,7 @@ export class Counter implements CycleContext {
     const count$ = changeValue$
       .startWith(0)
       .scan<number>((total, change) => total + change)
-      // .map(count => count.toString())
+      .map(count => String(count))
 
     input$.subscribe(next => console.log('change', next))
 

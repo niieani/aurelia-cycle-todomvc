@@ -27,8 +27,9 @@ export class BindingType {
 export class ChangeType {
   static Value = 'value'
   static Action = 'action'
-  static Added = 'added'
-  static Removed = 'removed'
+  static Add = 'add'
+  static Remove = 'remove'
+  static Do = 'do'
   static Bind = 'bind'
   static Unbind = 'unbind'
   static Signal = 'signal'
@@ -56,8 +57,10 @@ export interface CollectionChanges<T> extends ContextChanges {
 }
 
 export interface CollectionChange<T> {
-  action: 'added' | 'removed';
+  action: 'add' | 'remove' | 'do';
   item: T & { changes$: Observable<ContextChanges> };
+  where: (item: T) => boolean;
+  do: (item: T) => void;
 }
 
 export type CycleValue<T> = Observable<T> & { now?: T };
@@ -277,12 +280,14 @@ export function makeSignalDriver(context, propertyName: string, signaler: Bindin
   let subscription: Subscription
   
   const driverCreator: DriverFunction = function aureliaDriver(value$: Observable<string>) {
-    subscription = value$.subscribe(newValueFromContext => {
-      signaler.signal(signalName)
-      // console.log('signalling', signalName)
-      const next = { now: signalName, origin: ChangeOrigin.ViewModel, type: ChangeType.Signal }
-      triggerContextChange(next)
-    })
+    subscription = value$
+      .throttleTime(100) // don't signal too often
+      .subscribe(newValueFromContext => {
+        signaler.signal(signalName)
+        // console.log('signalling', signalName)
+        const next = { now: signalName, origin: ChangeOrigin.ViewModel, type: ChangeType.Signal }
+        triggerContextChange(next)
+      })
     return Observable.empty()
   }
   
@@ -384,6 +389,7 @@ export function makeTwoWayBindingDriver(context, propertyName: string, observerL
 
 export function makeCollectionBindingDriver(array: Array<any>, triggerContextChange: ((change: BindingChange<any>) => void)) {
   // TODO: make it a TwoWay driver by the use of the observerLocator
+  // TODO: add 'setFilter'; array map of the original indexes
   
   /*
   const strategy = strategyLocator.getStrategy(value)
@@ -402,47 +408,61 @@ export function makeCollectionBindingDriver(array: Array<any>, triggerContextCha
   
   const driverCreator: DriverFunction = function collectionDriver(collectionChanges$: Subject<CollectionChange<{}>>) {
     subscription = collectionChanges$.subscribe(collectionChange => {
-      if (collectionChange.action == 'added') {
-        if (array.indexOf(collectionChange.item) >= 0) return
+      switch (collectionChange.action) {
+        case 'add':
+          if (array.indexOf(collectionChange.item) >= 0) return
 
-        array.push(collectionChange.item)
-        
-        if (collectionChange.item instanceof Object) { // && typeof collectionChange.item['cycle'] === 'function') {
-          if (!collectionChange.item.changes$) {
-            collectionChange.item.changes$ = new Subject<ContextChanges>()
-          }
-          const subscription = collectionChange.item.changes$.subscribe(change => {
-            const next = { item: collectionChange.item, property: change.property, origin: change.origin, now: change.now, type: change.type } 
-            allInternalChanges$.next(next)
-            if (triggerContextChange) {
-              triggerContextChange(next)
+          array.push(collectionChange.item)
+          
+          if (collectionChange.item instanceof Object) { // && typeof collectionChange.item['cycle'] === 'function') {
+            if (!collectionChange.item.changes$) {
+              collectionChange.item.changes$ = new Subject<ContextChanges>()
             }
-          })
-          subscriptionMap.set(
-            collectionChange.item, 
-            subscription
-          )
-          subscriptions.add(subscription)
-        }
-      }
-      else {
-        const index = array.indexOf(collectionChange.item)
-        if (index < 0) return
-        
-        if (collectionChange.item instanceof Object) {
-          function _postUnbindHook() {
-            // console.log('unsubscribing post-unbind')
-            const subscription = subscriptionMap.get(collectionChange.item)
-            if (subscription) {
-              subscription.unsubscribe()
-              subscriptions.delete(subscription)
-            }
+            const subscription = collectionChange.item.changes$.subscribe(change => {
+              const next = { item: collectionChange.item, property: change.property, origin: change.origin, now: change.now, type: change.type } 
+              allInternalChanges$.next(next)
+              if (triggerContextChange) {
+                triggerContextChange(next)
+              }
+            })
+            subscriptionMap.set(
+              collectionChange.item, 
+              subscription
+            )
+            subscriptions.add(subscription)
           }
-          collectionChange.item['_postUnbindHooks'] = collectionChange.item['_postUnbindHooks'] || []
-          collectionChange.item['_postUnbindHooks'].push(_postUnbindHook)
-        }
+        break;
         
-        array.splice(index, 1)
+        case 'remove':
+          const index = array.indexOf(collectionChange.item)
+          if (index < 0) return
+          
+          if (collectionChange.item instanceof Object) {
+            function _postUnbindHook() {
+              // console.log('unsubscribing post-unbind')
+              const subscription = subscriptionMap.get(collectionChange.item)
+              if (subscription) {
+                subscription.unsubscribe()
+                subscriptions.delete(subscription)
+              }
+            }
+            collectionChange.item['_postUnbindHooks'] = collectionChange.item['_postUnbindHooks'] || []
+            collectionChange.item['_postUnbindHooks'].push(_postUnbindHook)
+          }
+          
+          array.splice(index, 1)
+        break;
+        
+        case 'do':
+          let actOn = array
+          if (collectionChange.where) {
+            actOn = array.filter(collectionChange.where)
+          }
+          actOn.forEach(collectionChange.do)
+        break;
+        
+        default:
+        break;
       }
       
       allInternalChanges$.next({ 
@@ -450,7 +470,7 @@ export function makeCollectionBindingDriver(array: Array<any>, triggerContextCha
         property: null, 
         origin: ChangeOrigin.ViewModel, 
         now: null, 
-        type: collectionChange.action === 'added' ? ChangeType.Added : ChangeType.Removed 
+        type: collectionChange.action === 'add' ? ChangeType.Add : ChangeType.Remove 
       })
     })
     return allInternalChanges$.asObservable()
