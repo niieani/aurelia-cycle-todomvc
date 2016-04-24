@@ -3,10 +3,24 @@ import 'todomvc-app-css/index.css'
 
 import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
 import {action, oneWay, twoWay, signal, collection, CycleSourcesAndSinks, ChangeOrigin, CycleContext, ContextChanges, ChangeType} from '../cycle/plugin'
-import {computedFrom} from 'aurelia-framework'
+import {autoinject} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
+import {activationStrategy} from 'aurelia-router';
 
+// @autoinject
 export class Todos { // implements CycleDriverContext
+	activate(params, routeConfig) {
+    this.currentFilter = routeConfig.name;
+	}
+  
+  determineActivationStrategy(): string {
+    return activationStrategy.invokeLifecycle;
+  }
+  
+  bind() {
+    console.log('bind')
+  }
+
   // changes$: Subject<ContextChanges>
   
   @action addNewTodoActions
@@ -16,28 +30,28 @@ export class Todos { // implements CycleDriverContext
   @signal completions
   @signal creationsAndDestructions
   
-  @collection todos // = new Array<TodoItem>()
+  @collection todos
   @action filter
   @oneWay currentFilter
   
   @action toggleAll
   @action clearCompleted
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, clearCompleted$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
+  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, clearCompleted$, activate$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
+    // activate$.subscribe(next => console.log('subscribe', next))
     const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
       newTodoTitle$, 
-      (action, title) => title as string
+      (action, title) => (title as string).trim()
     )
     
-    const newTodo$ = newTodoProspective$
-      .filter(title => title != '')
-      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll) })) //, this.clearCompleted
+    const todoAdditions$ = newTodoProspective$
+      .filter(title => !!title)
+      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll) }))
     
     // every time a new todo is created, reset title
-    newTodoTitle$ = newTodoTitle$
-      .merge(newTodo$.map(todo => ''))
+    newTodoTitle$ = todoAdditions$.map(todo => '')
 
-    const removedTodo$ = destroyTodo$
+    const todoRemovals$ = destroyTodo$
       .map(args => ({ action: 'remove', item: args[0] }))
     
     clearCompleted$ = clearCompleted$.map(() => ({
@@ -47,12 +61,12 @@ export class Todos { // implements CycleDriverContext
     }))
     
     const todoChanges$ = Observable
-      .merge(newTodo$, removedTodo$, clearCompleted$)
+      .merge(todoAdditions$, todoRemovals$, clearCompleted$)
     
-    const currentFilter$ = filter$
-      .map(args => args[0])
-      .startWith('all')
-      .distinctUntilChanged()
+    // const currentFilter$ = filter$
+    //   .map(args => args[0])
+    //   .startWith('all')
+    //   .distinctUntilChanged()
     
     // Trigger when any of todo.completed changes
     // so that we can update the filter
@@ -62,13 +76,11 @@ export class Todos { // implements CycleDriverContext
     // Trigger when we create and destroy any Todos to update the X left count
     const creationsAndDestructions$ = 
       todos$.filter(change => change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
-    
-    // todos$.subscribe(next => console.log('next', next))
 
     return {
       todos$: todoChanges$,
       newTodoTitle$,
-      currentFilter$,
+      // currentFilter$,
       completions$,
       creationsAndDestructions$
     }
@@ -77,8 +89,6 @@ export class Todos { // implements CycleDriverContext
 
 export class FilterTodoValueConverter {
   toView(todos: Array<TodoItem>, currentFilter) {
-    // console.log('filtering:', todos, currentFilter)
-    
     switch (currentFilter) {
       case 'active':
         return todos.filter(todo => !todo.isCompleted)

@@ -8,8 +8,10 @@ bootstrap((aurelia: Aurelia): void => {
     .standardConfiguration()
     .developmentLogging();
 
+  // aurelia.use.plugin('optimized-repeat/index');
   aurelia.use.plugin('cycle/plugin');
 
-  aurelia.start().then(() => aurelia.setRoot('cycle-todomvc/todos', document.body));
+  aurelia.start().then(() => aurelia.setRoot('cycle-todomvc/app', document.body));
+  // aurelia.start().then(() => aurelia.setRoot('repeat/repeat', document.body));
   // aurelia.start().then(() => aurelia.setRoot('app', document.body));
 });

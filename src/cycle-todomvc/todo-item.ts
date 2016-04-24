@@ -68,21 +68,22 @@ export class TodoItem {
       .startWith(false)
       .distinctUntilChanged()
     
-    // Destroy when somebody gives a todo an empty name
-    const destroy$ = editingAccepted$
-      .withLatestFrom(newTitle$, (action, title) => title)
-      .filter(title => title === '')
-      .map(title => [this])
-    
     // Sync initial title with newTitle upon start of editing
     const newTitleNext$ = editingStarted$
       .withLatestFrom(title$, (action, title) => title)
-
-    // Save changes to the title after successful edit
-    const titleNext$ = editingAccepted$
-      .withLatestFrom(newTitle$, (action, title) => title)
-      .filter(title => title !== '')
     
+    const newAcceptedTodoName$ = editingAccepted$
+      .withLatestFrom(newTitle$, (action, title) => title.trim())
+    
+    // Destroy when somebody gives a todo an empty name
+    const destroy$ = newAcceptedTodoName$
+      .filter(title => title === '')
+      .map(title => [this])
+
+    // Or save changes to the title after successful edit
+    const titleNext$ = newAcceptedTodoName$
+      .filter(title => title !== '')
+
     const toggledIsCompleted$ = toggle$
       .withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
     

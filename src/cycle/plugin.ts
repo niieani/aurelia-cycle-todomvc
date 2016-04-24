@@ -18,10 +18,10 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
         const context = view.controller.viewModel as any
         
         if (!context || typeof context.cycle !== 'function') return
-        const count = context._cycleCount = (context._cycleCount || 0) + 1   
-        // console.log('awesome bind', count)
+        const count = context._cycleCount = (context._cycleCount || 0) + 1
     
-        if (context._cycleCount > 1) {       
+        if (context._cycleCount > 1) {
+          console.error('would run the cycle more then once!', count)
           return
         }
     
@@ -47,12 +47,10 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
       
     },
     beforeUnbind: function (view: View & {bindingContext: any; controller: Controller}) {
-      // const context = this.viewModel
       if (view.controller !== null) {
         const context = view.controller.viewModel as any
         
         if (!context || typeof context._cycleDispose !== 'function') return
-        // console.log('awesome unbind', context._cycleCount)
         
         context._cycleCount = context._cycleCount - 1
         
@@ -68,7 +66,6 @@ export function configure(frameworkConfig: FrameworkConfiguration) {
 }
 
 export function makeBindingDrivers(context: any, diContainer: Container) {
-  //observerLocator: ObserverLocator, strategyLocator: RepeatStrategyLocator, signaler: BindingSignaler
   const drivers = {}
   
   // mega-observable with everything happening on the context
@@ -85,7 +82,7 @@ export function makeBindingDrivers(context: any, diContainer: Container) {
     changes$.next({ 
       property: null, 
       origin: ChangeOrigin.ViewModel, 
-      now: null, 
+      value: null, 
       type: ChangeType.Bind
     })
   }).bind(context)
@@ -94,7 +91,7 @@ export function makeBindingDrivers(context: any, diContainer: Container) {
     changes$.next({ 
       property: null, 
       origin: ChangeOrigin.ViewModel, 
-      now: null, 
+      value: null, 
       type: ChangeType.Unbind
     })
   }).bind(context)

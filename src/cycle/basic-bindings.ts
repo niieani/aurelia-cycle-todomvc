@@ -36,7 +36,7 @@ export class ChangeOrigin {
 }
 
 export interface BindingChange<T> {
-  now: T;
+  value: T;
   origin: ChangeOrigin;
   type: ChangeType;
 }
@@ -56,11 +56,11 @@ export interface CollectionChange<T> {
   do: (item: T) => void;
 }
 
-export type CycleValue<T> = Observable<T> & { now?: T };
+export type CycleValue<T> = Observable<T> & { value?: T };
 
-export type ValueAndOrigin<T> = {now: T, origin: ChangeOrigin}
+export type ValueAndOrigin<T> = {value: T, origin: ChangeOrigin}
 
-export type Collection<T> = Subject<CollectionChanges<T>> & { now: Array<T> }
+export type Collection<T> = Subject<CollectionChanges<T>> & { value: Array<T> }
 export type CycleSourcesAndSinks = { [s: string]: Observable<any> }
 
 export interface CycleContext {
@@ -76,7 +76,7 @@ export class OneWayDriverCreator implements DriverCreator {
       subscription = value$.subscribe(newValueFromContext => {
         if (newValueFromContext !== context[propertyName]) {
           context[propertyName] = newValueFromContext
-          const next = { property: propertyName, now: newValueFromContext, origin: ChangeOrigin.ViewModel, type: ChangeType.Value }
+          const next = { property: propertyName, value: newValueFromContext, origin: ChangeOrigin.ViewModel, type: ChangeType.Value }
           contextChanges.next(next)
         }
       })
@@ -108,7 +108,7 @@ export class TwoWayDriverCreator implements DriverCreator {
     
     const callable = (newValue, oldValue) => {
       subject.next(newValue)
-      const next = { property: propertyName, now: newValue, origin: ChangeOrigin.Unknown, type: ChangeType.Value }
+      const next = { property: propertyName, value: newValue, origin: ChangeOrigin.Unknown, type: ChangeType.Value }
       contextChanges.next(next)
     }
     
@@ -167,7 +167,7 @@ export class SignalDriverCreator implements DriverCreator {
         .subscribe(newValueFromContext => {
           this.signaler.signal(signalName)
           // console.log('signalling', signalName)
-          const next = { property: propertyName, now: signalName, origin: ChangeOrigin.ViewModel, type: ChangeType.Signal }
+          const next = { property: propertyName, value: signalName, origin: ChangeOrigin.ViewModel, type: ChangeType.Signal }
           contextChanges.next(next)
         })
       return Observable.empty()
@@ -190,7 +190,7 @@ export class ActionDriverCreator implements DriverCreator {
       context[propertyName] = function() {
         const args = Array.from(arguments)
         triggerPropertyMap.forEach((propertyName: string, handler: Subject<any>) => {
-          handler.next({ property: propertyName, origin: ChangeOrigin.View, now: args, type: ChangeType.Action })
+          handler.next({ property: propertyName, origin: ChangeOrigin.View, value: args, type: ChangeType.Action })
         })
       }
       triggerPropertyMap = context[propertyName].triggerPropertyMap = new Map<Subject<any>, string>()
@@ -205,7 +205,7 @@ export class ActionDriverCreator implements DriverCreator {
       
       subscription = triggers$.subscribe(args => {
         triggerPropertyMap.forEach((propertyName: string, handler: Subject<any>) => {
-          handler.next({ property: propertyName, origin: ChangeOrigin.ViewModel, now: args, type: ChangeType.Action })
+          handler.next({ property: propertyName, origin: ChangeOrigin.ViewModel, value: args, type: ChangeType.Action })
         })
       })
 
@@ -217,7 +217,7 @@ export class ActionDriverCreator implements DriverCreator {
           contextChanges.next(next)
           // console.log(`context handler:${count}`, propertyName, next)
         })
-        .map(change => change.now)
+        .map(change => change.value)
     }
     
     driverCreator.streamAdapter = rxjsAdapter
@@ -248,7 +248,7 @@ export class ViewModelDriverCreator implements DriverCreator {
           item.changes$ = new Subject<ContextChanges>()
         }
         const subscription = item.changes$.subscribe(change => {
-          const next = { property: change.property, parentProperty: propertyName, origin: change.origin, now: change.now, type: change.type } 
+          const next = { property: change.property, parentProperty: propertyName, origin: change.origin, value: change.value, type: change.type } 
           subject.next(next)
           contextChanges.next(next)
         })
@@ -308,9 +308,9 @@ export class CollectionDriverCreator implements DriverCreator {
                 collectionChange.item.changes$ = new Subject<ContextChanges>()
               }
               const subscription = collectionChange.item.changes$.subscribe(change => {
-                const internalNext = { item: collectionChange.item, property: change.property, origin: change.origin, now: change.now, type: change.type } 
+                const internalNext = { item: collectionChange.item, property: change.property, origin: change.origin, value: change.value, type: change.type } 
                 allInternalChanges$.next(internalNext)
-                const next = { item: collectionChange.item, property: propertyName, innerProperty: change.property, origin: change.origin, now: change.now, type: change.type } 
+                const next = { item: collectionChange.item, property: propertyName, innerProperty: change.property, origin: change.origin, value: change.value, type: change.type } 
                 contextChanges.next(next) // TODO: !
               })
               subscriptionMap.set(
@@ -358,7 +358,7 @@ export class CollectionDriverCreator implements DriverCreator {
             item: collectionChange.item, 
             property: null, 
             origin: ChangeOrigin.ViewModel, 
-            now: null, 
+            value: null, 
             type: collectionChange.action === 'add' ? ChangeType.Add : ChangeType.Remove 
           })
         }
