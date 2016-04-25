@@ -1,54 +1,48 @@
 import {Observable} from 'rxjs/Rx'
 import {bindable, useView} from 'aurelia-framework'
-import {action, oneWay, twoWay, collection, CycleSourcesAndSinks} from '../cycle/plugin'
+import {action, oneWay, twoWay, collection, communicatesWithParent, CycleSourcesAndSinks} from '../cycle/plugin'
 
 const ENTER_KEY = 13
 const ESC_KEY = 27
 
 @useView('./todo-item.html')
+@communicatesWithParent
 export class TodoItem {
   // You may define additional drivers here:
   // cycleDrivers = { }
   
   constructor(
     title: string,
-    completed: boolean, 
-    destroy, 
-    toggle
+    completed: boolean
   ) {
     this.title = title
     this.isCompleted = completed
-    // external actions
-    this.destroy = destroy
-    this.toggle = toggle
   }
   
-  @twoWay title;
-  @twoWay newTitle;
-  @twoWay isCompleted;
-  @oneWay isEditing;
+  @twoWay title
+  @twoWay newTitle
+  @twoWay isCompleted
+  @oneWay isEditing
   
   // internal actions
-  @action editingStarted;
-  @action keyUp;
-  @action doneEdit;
+  @action editingStarted
+  @action keyUp
+  @action doneEdit
+  // actions forwarded as messages to parent
+  @action destroy
   
-  // external actions
-  @action destroy;
-  @action toggle;
-  
-  cycle({ editingStarted$, keyUp$, doneEdit$, title$, newTitle$, toggle$, isCompleted$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
+  cycle({ editingStarted$, keyUp$, doneEdit$, title$, newTitle$, isCompleted$, parent$, destroy$ }: CycleSourcesAndSinks): CycleSourcesAndSinks {
     const cancelEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ESC_KEY)
 
-    // Allow either enter or blur to finish editing
+    // allow either 'enter' or 'blur' to finish editing
     doneEdit$ = keyUp$
       .filter((action) => (action[0] as KeyboardEvent).keyCode === ENTER_KEY)
       .merge(doneEdit$)
       // blur is gonna happen shortly after ENTER, so don't act on it twice
       .throttleTime(300)
     
-    // blur is gonna happen shortly after ESC, so don't act on it twice
+    // blur is gonna happen shortly after ESC too, so don't act on it twice
     const editingApproval$ = cancelEdit$
       .map(() => true)
       .merge(doneEdit$.map(() => false))
@@ -57,8 +51,8 @@ export class TodoItem {
     const editingAccepted$ = editingApproval$.filter((wasCancelled) => wasCancelled === false)
     const editingCancelled$ = editingApproval$.filter((wasCancelled) => wasCancelled === true)
     
-    // Create a stream that emits booleans that represent the
-    // "is editing" state.
+    // create a stream that emits booleans that represent
+    // the "is editing" state.
     const isEditing$ = Observable
       .merge(
         editingStarted$.map(() => true),
@@ -68,28 +62,34 @@ export class TodoItem {
       .startWith(false)
       .distinctUntilChanged()
     
-    // Sync initial title with newTitle upon start of editing
+    // sync initial title with newTitle upon start of editing
     const newTitleNext$ = editingStarted$
       .withLatestFrom(title$, (action, title) => title)
     
     const newAcceptedTodoName$ = editingAccepted$
       .withLatestFrom(newTitle$, (action, title) => title.trim())
     
-    // Destroy when somebody gives a todo an empty name
-    const destroy$ = newAcceptedTodoName$
-      .filter(title => title === '')
-      .map(title => [this])
-
-    // Or save changes to the title after successful edit
+    // when somebody renames a todo, save changes to the title after successful edit
     const titleNext$ = newAcceptedTodoName$
       .filter(title => title !== '')
+      
+    // or when the new name is empty, ask the parent to destroy
+    const destroyMessages$ = newAcceptedTodoName$
+      .filter(title => title === '')
+      .merge(destroy$, parent$.filter(message => message === 'destroy'))
+      .map(() => 'destroy')
 
-    const toggledIsCompleted$ = toggle$
-      .withLatestFrom(isCompleted$, (toggle, isCompleted) => true)
+    // we only message the parent about destructions
+    const messagesForParent$ = destroyMessages$
+
+    // the parent can ask us to tick or untick ourselves
+    const toggledIsCompleted$ = parent$
+      .filter(message => message === 'tick' || message === 'untick')
+      .map(message => message === 'tick' ? true : false)
     
     return {
       isEditing$,
-      destroy$,
+      parent$: messagesForParent$,
       newTitle$: newTitleNext$,
       title$: titleNext$,
       isCompleted$: toggledIsCompleted$

@@ -69,14 +69,10 @@ export function makeBindingDrivers(context: any, diContainer: Container) {
   const drivers = {}
   
   // mega-observable with everything happening on the context
-  let changes$: Subject<ContextChanges> = context.changes$ || new Subject<ContextChanges>()
+  let changes$: Subject<ContextChanges> = context.changes$ || (context.changes$ = new Subject<ContextChanges>())
 
   // TODO: use a defined Symbol instead of a property name
   // TODO: add bind hooks and remove post bind so that we can have multiple View instances of the same ViewModel
-  
-  if (!context.changes$) {
-    context.changes$ = changes$
-  }
   
   const onBind = (function() {
     changes$.next({ 

@@ -4,7 +4,7 @@
   <div class="view">
     <input class="toggle" type="checkbox" checked.bind="isCompleted">
     <label dblclick.trigger="editingStarted()">${title}</label>
-    <button class="destroy" click.delegate="destroy($this)"></button>
+    <button class="destroy" click.delegate="destroy()"></button>
   </div>
   <input class="edit" keyup.delegate="keyUp($event)" blur.trigger="doneEdit()" value.bind="newTitle">
 </template>

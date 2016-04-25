@@ -3,88 +3,90 @@ import 'todomvc-app-css/index.css'
 
 import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
 import {action, oneWay, twoWay, signal, collection, CycleSourcesAndSinks, ChangeOrigin, CycleContext, ContextChanges, ChangeType} from '../cycle/plugin'
-import {autoinject} from 'aurelia-framework'
 import {TodoItem} from './todo-item'
 import {activationStrategy} from 'aurelia-router';
 
-// @autoinject
 export class Todos { // implements CycleDriverContext
-	activate(params, routeConfig) {
-    this.currentFilter = routeConfig.name;
-	}
-  
-  determineActivationStrategy(): string {
-    return activationStrategy.invokeLifecycle;
-  }
-  
-  bind() {
-    console.log('bind')
-  }
-
-  // changes$: Subject<ContextChanges>
-  
-  @action addNewTodoActions
-  @action destroyTodo
+  @action addNewTodo
   @twoWay newTodoTitle
   
   @signal completions
   @signal creationsAndDestructions
   
   @collection todos
-  @action filter
   @oneWay currentFilter
   
   @action toggleAll
   @action clearCompleted
   
-  cycle({ addNewTodoActions$, destroyTodo$, newTodoTitle$, filter$, todos$, clearCompleted$, activate$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
-    // activate$.subscribe(next => console.log('subscribe', next))
-    const newTodoProspective$ = addNewTodoActions$.withLatestFrom(
-      newTodoTitle$, 
-      (action, title) => (title as string).trim()
-    )
+  cycle({ addNewTodo$, newTodoTitle$, todos$, clearCompleted$, toggleAll$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
+    // snapshot a name after it's submitted, filter empty values
+    const newTodoProspective$ = addNewTodo$.withLatestFrom(
+        newTodoTitle$, 
+        (action, title: string) => title.trim()
+      ).filter(title => !!title)
     
-    const todoAdditions$ = newTodoProspective$
-      .filter(title => !!title)
-      .map(title => ({ action: 'add', item: new TodoItem(title, false, this.destroyTodo, this.toggleAll) }))
-    
-    // every time a new todo is created, reset title
-    newTodoTitle$ = todoAdditions$.map(todo => '')
+    const todoCreations$ = newTodoProspective$
+      .map(title => ({ action: 'add', item: new TodoItem(title, false) }))
 
-    const todoRemovals$ = destroyTodo$
-      .map(args => ({ action: 'remove', item: args[0] }))
+    // every time a new todo is created, reset title
+    newTodoTitle$ = todoCreations$.map(todo => '')
+
+    // todos can ask to be removed via messages
+    const todoRemovals$ = todos$
+      .filter(change => change.type === ChangeType.Message && change.value === 'destroy')
+      .map(change => ({ action: 'remove', item: change.item }))
     
+    // ask only completed todos to destroy themselves
     clearCompleted$ = clearCompleted$.map(() => ({
-      action: 'do',
-      where: (item: TodoItem) => item.isCompleted,
-      do: (item: TodoItem) => this.destroyTodo(item)
+      action: 'remove',
+      where: (item: TodoItem) => item.isCompleted
+    }))
+    
+    // ask todos to tick themselves under specific circumstances
+    const toggleCompletions$ = toggleAll$.map(() => ({
+      action: 'message', // NOTE: currently only messages bound elements //
+      ifSome: (item: TodoItem) => !item.isCompleted,
+      message: 'tick',
+      else: {
+        ifAll: (item: TodoItem) => item.isCompleted,
+        message: 'untick'
+      }
     }))
     
     const todoChanges$ = Observable
-      .merge(todoAdditions$, todoRemovals$, clearCompleted$)
+      .merge(todoCreations$, todoRemovals$, clearCompleted$, toggleCompletions$)
     
-    // const currentFilter$ = filter$
-    //   .map(args => args[0])
-    //   .startWith('all')
-    //   .distinctUntilChanged()
-    
-    // Trigger when any of todo.completed changes
+    // signal when any of todo.completed changes
     // so that we can update the filter
     const completions$ = todos$
       .filter(change => change.property === 'isCompleted')
 
-    // Trigger when we create and destroy any Todos to update the X left count
+    // signal when we create and destroy todos
     const creationsAndDestructions$ = 
-      todos$.filter(change => change.type === ChangeType.Unbind || change.type === ChangeType.Bind)
+      todos$.filter(change => 
+        // change.type === ChangeType.Unbind || change.type === ChangeType.Bind ||
+        change.type === ChangeType.Add || change.type === ChangeType.Remove
+      )
 
     return {
       todos$: todoChanges$,
       newTodoTitle$,
-      // currentFilter$,
       completions$,
       creationsAndDestructions$
     }
   }
+  
+	activate(params, routeConfig) {
+    // TODO: perhaps integrate into cycle via a driver?
+    this.currentFilter = routeConfig.name;
+	}
+  
+  determineActivationStrategy() {
+    return activationStrategy.invokeLifecycle;
+  }
+  
+  // changes$: Subject<ContextChanges>
 }
 
 export class FilterTodoValueConverter {
@@ -111,6 +113,12 @@ export class CountCompleteValueConverter {
   toView(todos: Array<TodoItem>) {
     const count = todos ? todos.filter(todo => todo.isCompleted).length : 0
     return count
+  }
+}
+
+export class AllCompleteValueConverter {
+  toView(todos: Array<TodoItem>) {
+    return todos ? todos.every(todo => todo.isCompleted) : false
   }
 }
 

@@ -26,12 +26,13 @@ export class ChangeType {
   static Bind = 'bind'
   static Unbind = 'unbind'
   static Signal = 'signal'
+  static Message = 'message'
 }
 
 export class ChangeOrigin {
   static View = 'View'
   static ViewModel = 'ViewModel'
-  static InitialValue = 'InitialValue'
+  // static InitialValue = 'InitialValue'
   static Unknown = 'Unknown'
 }
 
@@ -66,6 +67,29 @@ export type CycleSourcesAndSinks = { [s: string]: Observable<any> }
 export interface CycleContext {
   changes$?: Subject<ContextChanges>;
   cycle: (sources: CycleSourcesAndSinks) => CycleSourcesAndSinks;
+}
+
+@autoinject
+export class ParentDriverCreator implements DriverCreator {
+  makeDriver(context: any, propertyName: string, contextChanges: Subject<ContextChanges>) {
+    const messagesFromParent$ = context[propertyName] || (context[propertyName] = new Subject())
+    let subscription: Subscription
+    const driverCreator: DriverFunction = (messagesFromChild$: Observable<string>) => {
+      subscription = messagesFromChild$.subscribe(newMessageForParent => {
+        const next = { property: propertyName, value: newMessageForParent, origin: ChangeOrigin.ViewModel, type: ChangeType.Message }
+        contextChanges.next(next)
+      })
+      return messagesFromParent$.asObservable()
+    }
+    
+    driverCreator.streamAdapter = rxjsAdapter
+    return { 
+      driverCreator,
+      dispose: () => {
+        if (subscription) subscription.unsubscribe()
+      }
+    }
+  }
 }
 
 @autoinject
@@ -287,7 +311,7 @@ export class CollectionDriverCreator implements DriverCreator {
     
     if (!context[propertyName] || !(context[propertyName] instanceof Array))
       context[propertyName] = []
-    const array = context[propertyName]
+    const array = context[propertyName] as Array<any>
 
     const allInternalChanges$ = new Subject<CollectionChanges<{}>>()
     const subscriptionMap = new WeakMap<any, Subscription>()
@@ -297,11 +321,14 @@ export class CollectionDriverCreator implements DriverCreator {
     
     const driverCreator: DriverFunction = (collectionChanges$: Subject<CollectionChange<{}>>) => {
       subscription = collectionChanges$.subscribe(collectionChange => {
+        let actOn = array
         switch (collectionChange.action) {
           case 'add':
+            // TODO: should we allow duplicates?
             if (array.indexOf(collectionChange.item) >= 0) return
-
+            
             array.push(collectionChange.item)
+            // console.log('added', collectionChange.item)
             
             if (collectionChange.item instanceof Object) { // && typeof collectionChange.item['cycle'] === 'function') {
               if (!collectionChange.item.changes$) {
@@ -322,31 +349,65 @@ export class CollectionDriverCreator implements DriverCreator {
           break
           
           case 'remove':
-            const index = array.indexOf(collectionChange.item)
-            if (index < 0) return
-            
-            if (collectionChange.item instanceof Object) {
-              function _postUnbindHook() {
-                // console.log('unsubscribing post-unbind')
-                const subscription = subscriptionMap.get(collectionChange.item)
-                if (subscription) {
-                  subscription.unsubscribe()
-                  subscriptions.delete(subscription)
-                }
-              }
-              collectionChange.item['_postUnbindHooks'] = collectionChange.item['_postUnbindHooks'] || []
-              collectionChange.item['_postUnbindHooks'].push(_postUnbindHook)
+            if (collectionChange.item) {
+              removeItem(collectionChange.item)
+              break
             }
-            
-            array.splice(index, 1)
-          break
-          
-          case 'do':
-            let actOn = array
             if (collectionChange.where) {
               actOn = array.filter(collectionChange.where)
+              actOn.forEach(removeItem)
             }
-            actOn.forEach(collectionChange.do)
+            
+            function removeItem(item) {
+              const index = array.indexOf(item)
+              if (index < 0) return
+              
+              if (item instanceof Object) {
+                function _postUnbindHook() {
+                  // console.log('unsubscribing post-unbind')
+                  const subscription = subscriptionMap.get(item)
+                  if (subscription) {
+                    subscription.unsubscribe()
+                    subscriptions.delete(subscription)
+                  }
+                }
+                item['_postUnbindHooks'] = item['_postUnbindHooks'] || []
+                item['_postUnbindHooks'].push(_postUnbindHook)
+              }
+              
+              array.splice(index, 1)
+            }
+          break
+          
+          case 'do': // DEPRACATE?
+            if ((!collectionChange.ifAll || array.every(collectionChange.ifAll)) 
+            && (!collectionChange.ifSome || array.some(collectionChange.ifSome))) {
+              if (collectionChange.where) {
+                actOn = array.filter(collectionChange.where)
+              }
+              actOn.forEach(collectionChange.do)
+            }
+          break
+          
+          case 'message':
+          
+            let change = collectionChange
+            while (change) {
+              if ((!change.ifAll || array.every(change.ifAll)) 
+              && (!change.ifSome || array.some(change.ifSome))) {
+                if (change.where) {
+                  actOn = array.filter(change.where)
+                }
+                actOn.forEach(item => {
+                  if (item.parent)
+                    item.parent.next(change.message)
+                })
+                change = null
+                // actOn.forEach(collectionChange.do)
+              } else {
+                change = change.else
+              }
+            }
           break
           
           default:
@@ -408,4 +469,8 @@ export function signal(definition, propertyName) {
 
 export function viewModel(definition, propertyName) {
   defineDriverCreator(definition.constructor, propertyName, ViewModelDriverCreator)
+}
+
+export function communicatesWithParent(definition) {
+  defineDriverCreator(definition, 'parent', ParentDriverCreator)
 }

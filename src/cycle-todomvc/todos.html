@@ -1,14 +1,14 @@
 <template>
   <header class="header">
     <h1>todos</h1>
-    <form submit.delegate="addNewTodoActions()">
+    <form submit.delegate="addNewTodo()">
       <input value.bind="newTodoTitle" class="new-todo" placeholder="What needs to be done?" autofocus>
     </form>
   </header>
   <template if.bind="todos.length">
     <!-- This section should be hidden by default and shown when there are todos -->
     <section class="main">
-      <input class="toggle-all" type="checkbox" click.delegate="toggleAll()">
+      <input class="toggle-all" type="checkbox" change.delegate="toggleAll()" checked.one-way="todos | allComplete & signal: completions : creationsAndDestructions">
       <label for="toggle-all">Mark all as complete</label>
       <ul class="todo-list">
         <li as-element="compose"
@@ -26,15 +26,6 @@
         <li repeat.for="row of router.navigation">
           <a href.bind="row.href" class="${row.isActive ? 'selected' : ''}">${row.title}</a>
         </li>
-        <!--<li>
-          <a route-href="route: 'all'" class="${currentFilter == 'all' ? 'selected' : ''}" href="#/" click.delegate="filter('all')">All</a>
-        </li>
-        <li>
-          <a route-href="route: 'active'" class="${currentFilter == 'active' ? 'selected' : ''}" href="#/active" click.delegate="filter('active')">Active</a>
-        </li>
-        <li>
-          <a route-href="route: 'completed'" class="${currentFilter == 'completed' ? 'selected' : ''}" href="#/completed" click.delegate="filter('completed')">Completed</a>
-        </li>-->
       </ul>
       <!-- Hidden if no completed items are left ↓ -->
       <button if.bind="todos | countComplete | any & signal: completions : creationsAndDestructions" class="clear-completed" click.delegate="clearCompleted()">Clear completed</button>
