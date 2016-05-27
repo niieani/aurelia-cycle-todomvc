@@ -1,32 +1,32 @@
-import {Users} from 'src/users';
 import {HttpClient} from 'aurelia-fetch-client';
+import './setup';
+import {Users} from '../../src/users';
 
-class HttpStub {
-  items: any[];
+class HttpStub extends HttpClient {
+  url;
+  itemStub;
   
   fetch(url) {
-    return new Promise(resolve => {
-      resolve({ json: () => this.items });
+    var response = this.itemStub;
+    this.url = url;
+    return new Promise((resolve) => {
+      resolve({ json: () => response });
     });
   }
-  
-  configure(func) { }
-}
 
-function createHttpStub(): any {
-  return new HttpStub();
+  configure(config) {
+    return this;
+  }
 }
 
 describe('the Users module', () => {
-
   it('sets fetch response to users', (done) => {
-    var http = createHttpStub(),
-        sut = new Users(<HttpClient>http),
-        itemStubs = [1],
-        itemFake = [2];
-        
-    http.items = itemStubs;
-    
+    var http = new HttpStub();
+    var sut = new Users(http);
+    var itemStubs = [1];
+    var itemFake = [2];
+
+    http.itemStub = itemStubs;
     sut.activate().then(() => {
       expect(sut.users).toBe(itemStubs);
       expect(sut.users).not.toBe(itemFake);

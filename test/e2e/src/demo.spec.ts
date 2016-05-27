@@ -9,7 +9,7 @@ describe('aurelia skeleton app', function() {
     po_skeleton = new PageObject_Skeleton();
     po_welcome = new PageObject_Welcome();
 
-    browser.loadAndWaitForAureliaPage("http://localhost:9000");
+    browser.loadAndWaitForAureliaPage("http://localhost:3000");
   });
 
   it('should load the page and display the initial page title', () => {
@@ -17,7 +17,7 @@ describe('aurelia skeleton app', function() {
   });
 
   it('should display greeting', () => {
-    expect(po_welcome.getGreeting()).toBe('Welcome to the Aurelia Navigation App!');
+    expect(po_welcome.getGreeting()).toBe('Welcome to the Aurelia Navigation App');
   });
 
   it('should automatically write down the fullname', () => {
