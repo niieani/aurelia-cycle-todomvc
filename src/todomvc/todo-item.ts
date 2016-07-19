@@ -1,15 +1,18 @@
 import {Observable} from 'rxjs/Rx'
 import {bindable, useView} from 'aurelia-framework'
-import {action, oneWay, twoWay, collection, communicatesWithParent, CycleSourcesAndSinks} from 'aurelia-cycle'
+import {cycle, action, oneWay, twoWay, collection, communicatesWithParent, CycleSourcesAndSinks} from 'aurelia-cycle'
 
 const ENTER_KEY = 13
 const ESC_KEY = 27
 
-@useView('./todo-item.html')
+// @useView('./todo-item.html')
 @communicatesWithParent
+// @cycle
 export class TodoItem {
   // You may define additional drivers here:
   // cycleDrivers = { }
+  
+  @bindable state = {}
   
   constructor(
     title: string,
@@ -17,6 +20,9 @@ export class TodoItem {
   ) {
     this.title = title
     this.isCompleted = completed
+  }
+  created(owningView, myView) {
+    console.log('created', owningView, myView);
   }
   
   @twoWay title

@@ -1,11 +1,12 @@
-import 'todomvc-common/base.css'
-import 'todomvc-app-css/index.css'
-
 import {Observable, Subject, ReplaySubject, Subscription} from 'rxjs/Rx'
-import {action, oneWay, twoWay, signal, collection, CycleSourcesAndSinks, ChangeOrigin, CycleContext, ContextChanges, ChangeType} from 'aurelia-cycle'
+import {action, oneWay, twoWay, signal, collection, CycleSourcesAndSinks, ChangeOrigin, CycleContext, ContextChanges, ChangeType, cycle} from 'aurelia-cycle'
 import {TodoItem} from './todo-item'
-import {activationStrategy} from 'aurelia-router';
+import {activationStrategy} from 'aurelia-router'
+import {autoinject} from 'aurelia-framework'
+import {Router} from 'aurelia-router'
 
+@autoinject
+// @cycle
 export class Todos { // implements CycleDriverContext
   @action addNewTodo
   @twoWay newTodoTitle
@@ -18,6 +19,9 @@ export class Todos { // implements CycleDriverContext
   
   @action toggleAll
   @action clearCompleted
+
+  // state = {}
+  // constructor(private router: Router) {console.log(this)}
   
   cycle({ addNewTodo$, newTodoTitle$, todos$, clearCompleted$, toggleAll$ }: CycleSourcesAndSinks & { todos$: Observable<ContextChanges> }): CycleSourcesAndSinks {
     // snapshot a name after it's submitted, filter empty values
@@ -27,6 +31,7 @@ export class Todos { // implements CycleDriverContext
       ).filter(title => !!title)
     
     const todoCreations$ = newTodoProspective$
+      // .map(title => ({ action: 'add', item: { title, isCompleted: false } }))
       .map(title => ({ action: 'add', item: new TodoItem(title, false) }))
 
     // every time a new todo is created, reset title

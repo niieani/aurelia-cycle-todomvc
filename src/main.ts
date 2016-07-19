@@ -4,7 +4,8 @@ import {bootstrap} from 'aurelia-bootstrapper-webpack';
 bootstrap((aurelia: Aurelia): void => {
   aurelia.use
     .standardConfiguration()
-    .developmentLogging();
+    .developmentLogging()
+    .plugin('aurelia-cycle');
 
   const rootElem = document.body;
   aurelia.start().then(() => aurelia.setRoot('app', rootElem));

@@ -1,4 +1,7 @@
 <template>
+  <require from="todomvc-common/base.css"></require>
+  <require from="todomvc-app-css/index.css"></require>
+  <require from="./todo-item"></require>
   <header class="header">
     <h1>todos</h1>
     <form submit.delegate="addNewTodo()">
@@ -16,6 +19,11 @@
             view-model.bind="todo"
             class="${ todo.isCompleted ? 'completed' : '' } ${ todo.isEditing ? 'editing' : '' }">
         </li>
+        <!--<li as-element="todo-item"
+            repeat.for="todo of todos | filterTodo: currentFilter & signal: completions"
+            state.bind="todo"
+            class="${ todo.isCompleted ? 'completed' : '' } ${ todo.isEditing ? 'editing' : '' }">
+        </li>-->
       </ul>
     </section>
     <!-- This footer should hidden by default and shown when there are todos -->

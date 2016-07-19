@@ -5,15 +5,35 @@ export class App {
   router: Router;
 
   configureRouter(config: RouterConfiguration, router: Router) {
-    this.router = router;
-    config.title = 'TodoMVC Aurelia Cycle';
+    // config.title = 'TodoMVC';
     config.map([
       { route: ['', 'all'], name: 'all', moduleId: './todos', title: 'All', nav: true },
       { route: 'active', name: 'active', moduleId: './todos', title: 'Active', nav: true },
       { route: 'completed', name: 'completed', moduleId: './todos', title: 'Completed', nav: true }
     ])
+    this.router = router;
   }
 }
+
+/*
+@collection('./test') todos;
+
+// getting view-model dynamically (on first element add, then cache):
+const moduleId = './test';
+return this.viewEngine.importViewModelResource(moduleId).then(viewModelResource => {
+  const viewModelConstructor = viewModelResource.value;
+  return viewModelConstructor;
+  // TODO: make sure to register in the right dependency injection container of the ViewModel: https://github.com/aurelia/templating/blob/a56b7440b4c0a30236088aedf30885983f142dc1/src/composition-engine.js#L161  
+})
+
+sink $todos: { action: 'add', state: { title: 'abc', isCompleted: false } }
+
+  ## will trigger:
+let action = ... 
+let viewModel = Object.assign(container.get(viewModelConstructor), action.state)
+
+*/
+
 
 /**
  * TODO:

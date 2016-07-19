@@ -5,7 +5,8 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "noEmitHelpers": true
+    "noEmitHelpers": false,
+    "moduleResolution": "node"
   },
   "filesGlob": [
     "./src/**/*.ts",
